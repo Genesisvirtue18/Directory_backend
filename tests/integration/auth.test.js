@@ -14,9 +14,12 @@ test('isolated MongoDB: registration, login, rotation, logout and role boundary'
     await connectDatabase(mongo.getUri('auth_integration'));
     await Promise.all([User.init(), RefreshToken.init()]);
     const app = createApp(config, { logging: false, rateLimitMax: 1000 });
-    const registered = await request(app).post('/api/v1/auth/register').send({ name: 'Directory Owner', email: 'owner@example.com', password: 'safe-password-123', role: 'business_owner' }).expect(201);
+    const registered = await request(app).post('/api/v1/auth/register').send({ email: 'owner@example.com', password: 'safe-password-123' }).expect(201);
     assert.equal(registered.body.data.user.role, 'business_owner');
     assert.equal(registered.body.data.user.passwordHash, undefined);
+    const storedUser = await User.findOne({ email: 'owner@example.com' }).select('+passwordHash');
+    assert.equal(storedUser.role, 'business_owner');
+    assert.notEqual(storedUser.passwordHash, 'safe-password-123');
     const login = await request(app).post('/api/v1/auth/login').send({ email: 'owner@example.com', password: 'safe-password-123' }).expect(200);
     const refreshed = await request(app).post('/api/v1/auth/refresh-token').send({ refreshToken: login.body.data.refreshToken }).expect(200);
     assert.notEqual(refreshed.body.data.refreshToken, login.body.data.refreshToken);

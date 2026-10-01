@@ -16,6 +16,9 @@ const schema = z.object({
   TRUST_PROXY: z.string().default(''),
   EMAIL_FROM: z.string().optional(),
   SMS_PROVIDER: z.string().default('development'),
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
 }).refine(value => value.JWT_ACCESS_SECRET !== value.JWT_REFRESH_SECRET, {
   path: ['JWT_REFRESH_SECRET'], message: 'Access and refresh secrets must differ',
 });

@@ -1,4 +1,6 @@
 import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -24,6 +26,7 @@ export function createApp(config, { databaseState = () => mongoose.connection.re
   }));
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: false, limit: '100kb', parameterLimit: 100 }));
+  app.use('/uploads', express.static(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads'), { maxAge: '7d', fallthrough: false }));
   app.use('/api/v1', apiRouter(config, databaseState));
   app.use(notFound);
   app.use(errorHandler);

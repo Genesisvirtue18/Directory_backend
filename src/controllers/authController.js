@@ -6,9 +6,10 @@ import { sendSuccess } from '../utils/response.js';
 import { findRefreshToken, issueTokens, revokeRefreshToken } from '../utils/tokens.js';
 const publicUser = user => user.toJSON();
 export const register = config => async (req, res, next) => { try {
-  const { name, email, phone, password, role } = req.validated.body;
-  if (await User.exists({ $or: [...(email ? [{ email }] : []), ...(phone ? [{ phone }] : [])] })) throw new AppError('An account with this contact already exists', 409);
-  const user = await User.create({ name, email, phone, role, passwordHash: await bcrypt.hash(password, 12) });
+  const { name, email, password } = req.validated.body;
+  if (await User.exists({ email })) throw new AppError('An account with this email already exists', 409);
+  const displayName = name || email.split('@')[0].replace(/[._-]+/g, ' ').trim().slice(0, 120) || 'Business Owner';
+  const user = await User.create({ name: displayName.length >= 2 ? displayName : 'Business Owner', email, role: 'business_owner', passwordHash: await bcrypt.hash(password, 12) });
   const tokens = await issueTokens(user, config, req); sendSuccess(res, 'Registration successful', { user: publicUser(user), ...tokens }, 201);
 } catch (e) { next(e); } };
 export const login = config => async (req, res, next) => { try {

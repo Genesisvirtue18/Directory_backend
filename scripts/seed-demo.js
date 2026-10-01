@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from '../src/config/env.js';
 import { User } from '../src/models/User.js';
@@ -26,12 +27,21 @@ try {
     autoCreate: false,
   });
 
+  // Development-only credentials. Set DEMO_SEED_PASSWORD in .env to override this value.
+  const demoPassword = process.env.DEMO_SEED_PASSWORD || 'DemoPass123!';
+  const passwordHash = await bcrypt.hash(demoPassword, 12);
+
   const owner = await findOrCreate(User, { email: 'demo.owner@example.com' }, {
     name: 'Demo Business Owner', role: 'business_owner', status: 'active',
   });
   const admin = await findOrCreate(User, { email: 'demo.admin@example.com' }, {
     name: 'Demo Admin', role: 'admin', status: 'active',
   });
+  // Also update existing demo accounts, which may have been seeded before passwords existed.
+  await User.updateMany(
+    { _id: { $in: [owner._id, admin._id] } },
+    { $set: { passwordHash } }
+  );
   const category = await findOrCreate(Category, { slug: 'demo-cafes' }, {
     name: 'Demo Cafes', description: 'Sample category for testing the business directory.',
     isActive: true,

@@ -28,6 +28,37 @@ const hoursSchema = new Schema({
   opens: { type: String, match: /^(?:[01]\d|2[0-3]):[0-5]\d$/, required() { return !this.isClosed; } },
   closes: { type: String, match: /^(?:[01]\d|2[0-3]):[0-5]\d$/, required() { return !this.isClosed; } },
 }, { _id: false });
+
+const reviewSchema = new Schema({
+  reviewerName: { type: String, required: true, trim: true, maxlength: 120 },
+  reviewerAvatar: urlField,
+  rating: { type: Number, required: true, min: 1, max: 5 },
+  comment: { type: String, trim: true, maxlength: 3000 },
+  isVerified: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+}, { _id: true });
+
+const socialLinksSchema = new Schema({
+  facebook: urlField,
+  instagram: urlField,
+  linkedin: urlField,
+  youtube: urlField,
+  x: urlField,
+}, { _id: false });
+
+const faqSchema = new Schema({
+  question: { type: String, required: true, trim: true, maxlength: 500 },
+  answer: { type: String, required: true, trim: true, maxlength: 3000 },
+}, { _id: true });
+
+const offerSchema = new Schema({
+  title: { type: String, required: true, trim: true, maxlength: 180 },
+  description: { type: String, trim: true, maxlength: 2000 },
+  code: { type: String, trim: true, uppercase: true, maxlength: 50 },
+  validFrom: Date,
+  validUntil: Date,
+  isActive: { type: Boolean, default: true },
+}, { _id: true });
 const counter = { type: Number, default: 0, min: 0, validate: Number.isInteger };
 
 const businessSchema = new Schema({
@@ -51,8 +82,20 @@ const businessSchema = new Schema({
   } },
   logo: urlField,
   images: [urlField],
+  photoCount: { type: Number, default: 0, min: 0, validate: Number.isInteger },
   priceRange: { type: String, enum: ['budget', 'moderate', 'expensive', 'luxury'] },
   keywords: [{ type: String, trim: true, maxlength: 80 }],
+  highlights: [{ type: String, trim: true, maxlength: 180 }],
+  amenities: [{ type: String, trim: true, maxlength: 180 }],
+  establishedYear: { type: Number, min: 1800, max: new Date().getFullYear(), validate: Number.isInteger },
+  teamSize: { type: Number, min: 1, validate: Number.isInteger },
+  responseTimeMinutes: { type: Number, min: 0, validate: Number.isInteger },
+  googlePlaceId: { type: String, trim: true, maxlength: 300 },
+  mapEmbedUrl: urlField,
+  socialLinks: socialLinksSchema,
+  faqs: [faqSchema],
+  offers: [offerSchema],
+  reviews: [reviewSchema],
   rejectionReason: { type: String, maxlength: 2000 },
   timeZone: { type: String, default: 'Asia/Kolkata' },
   verificationStatus: { type: String, enum: ['pending', 'verified', 'rejected'], default: 'pending' },
@@ -70,10 +113,24 @@ const businessSchema = new Schema({
 
 businessSchema.index({ location: '2dsphere' });
 businessSchema.index({ category: 1 });
+businessSchema.index({ category: 1, listingStatus: 1, deletedAt: 1, averageRating: -1 }, { collation: { locale: 'en', strength: 2 } });
 businessSchema.index({ 'address.city': 1, 'address.locality': 1 });
 businessSchema.index({ 'address.locality': 1 });
 businessSchema.index({ listingStatus: 1 });
+businessSchema.index({ listingStatus: 1, deletedAt: 1, createdAt: -1 }, { collation: { locale: 'en', strength: 2 } });
+businessSchema.index({ listingStatus: 1, deletedAt: 1, isFeatured: -1, averageRating: -1, _id: 1 }, { collation: { locale: 'en', strength: 2 } });
+businessSchema.index({ listingStatus: 1, deletedAt: 1, averageRating: -1, reviewCount: -1, _id: 1 }, { collation: { locale: 'en', strength: 2 } });
+businessSchema.index({ listingStatus: 1, deletedAt: 1, 'address.city': 1, 'address.locality': 1, verificationStatus: 1, averageRating: -1 });
+businessSchema.index({ listingStatus: 1, deletedAt: 1, 'address.city': 1, 'address.locality': 1, 'address.state': 1, verificationStatus: 1, averageRating: -1 }, { collation: { locale: 'en', strength: 2 } });
 businessSchema.index({ owner: 1, deletedAt: 1 });
 businessSchema.index({ name: 'text', description: 'text', keywords: 'text', services: 'text' });
+businessSchema.pre('validate', function standardizeEmbeddedData() {
+  if (this.isModified('reviews')) {
+    const ratings = this.reviews.map(review => Number(review.rating)).filter(rating => Number.isFinite(rating) && rating >= 1 && rating <= 5);
+    this.reviewCount = ratings.length;
+    this.averageRating = ratings.length ? Number((ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(2)) : 0;
+  }
+  if (this.isModified('images')) this.photoCount = this.images.length;
+});
 
 export const Business = mongoose.model('Business', businessSchema);
