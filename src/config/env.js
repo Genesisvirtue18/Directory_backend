@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
 const secret = z.string().min(32).refine(value => !value.startsWith('replace-'), 'Replace the placeholder with a random secret');
+const clientOrigin = z.url().refine(value => {
+  const url = new URL(value);
+  return ['http:', 'https:'].includes(url.protocol) && url.origin === value;
+}, 'Use an HTTP(S) origin without a trailing slash or path');
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(5000),
@@ -9,10 +13,8 @@ const schema = z.object({
   JWT_REFRESH_SECRET: secret,
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
-  CLIENT_URL: z.url().refine(value => {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) && url.origin === value;
-  }, 'Use an HTTP(S) origin without a trailing slash or path'),
+  CLIENT_URL: clientOrigin,
+  CLIENT_URL_2: clientOrigin.optional(),
   TRUST_PROXY: z.string().default(''),
   EMAIL_FROM: z.string().optional(),
   SMS_PROVIDER: z.string().default('development'),
