@@ -55,7 +55,7 @@ Startup validates environment configuration, connects MongoDB, then opens the HT
 ## Health and responses
 
 ```powershell
-Invoke-RestMethod http://localhost:5000/api/v1/health | ConvertTo-Json -Depth 5
+Invoke-RestMethod https://directory-backend-ai6r.onrender.com/api/v1/health | ConvertTo-Json -Depth 5
 ```
 
 Healthy responses use HTTP 200:
