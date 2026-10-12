@@ -35,7 +35,12 @@ export function errorHandler(error, req, res, next) {
   if (status >= 500) {
     // Never log raw errors: driver messages and stacks can contain connection credentials.
     console.error('Request failed', { status, type: error.name || 'Error' });
-    if (req.app.get('env') === 'development') errors = [{ type: error.name || 'Error' }];
+    if (req.app.get('env') === 'development') {
+      errors = [{
+        type: error.name || 'Error',
+        ...(error instanceof TypeError ? { message: error.message } : {}),
+      }];
+    }
   }
   return sendError(res, status, message, errors);
 }
