@@ -15,7 +15,10 @@ import { authLogin, authRegister, idParam, objectId, pagination, refreshSchema }
 
 const authLimiter = (req, res, next) => next(); // General API limiter is mounted by app; provider-specific limits can be configured per deployment.
 const pageQuery = pagination.extend({ search: z.string().trim().max(100).optional(), parent: objectId.optional(), active: z.coerce.boolean().optional(), state: z.string().max(180).optional(), city: z.string().max(180).optional() });
-const httpUrl = z.url().refine(value => ['http:', 'https:'].includes(new URL(value).protocol), 'Use an HTTP(S) URL');
+const httpUrl = z.url().refine(value => {
+  try { return ['http:', 'https:'].includes(new URL(value).protocol); }
+  catch { return false; }
+}, 'Use an HTTP(S) URL');
 const imageUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 10 },
@@ -24,7 +27,11 @@ const imageUpload = multer({
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 }, fileFilter: (_req, file, done) => done(null, /\.(csv|txt)$/i.test(file.originalname)) });
 const businessBody = z.object({ name:z.string().trim().min(2).max(180), slug:z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(180).optional(), category:objectId, description:z.string().max(10000).optional(), phone:z.string().max(30).optional(), alternatePhone:z.string().max(30).optional(), whatsapp:z.string().max(30).optional(), email:z.string().email().optional(), website:httpUrl.optional(), address:z.object({addressLine1:z.string().max(250).optional(),addressLine2:z.string().max(250).optional(),landmark:z.string().max(150).optional(),city:z.string().max(120).optional(),locality:z.string().max(120).optional(),state:z.string().max(120).optional(),postalCode:z.string().max(20).optional(),country:z.string().length(2).optional()}).partial().optional(), workingHours:z.array(z.object({day:z.enum(['monday','tuesday','wednesday','thursday','friday','saturday','sunday']),isClosed:z.boolean().optional(),opens:z.string().optional(),closes:z.string().optional()})).max(7).optional(), logo:httpUrl.optional(),images:z.array(httpUrl).max(30).optional(),photoCount:z.coerce.number().int().min(0).optional(),priceRange:z.enum(['budget','moderate','expensive','luxury']).optional(),keywords:z.array(z.string().max(80)).max(30).optional(),highlights:z.array(z.string().max(180)).max(30).optional(),amenities:z.array(z.string().max(180)).max(50).optional(),establishedYear:z.coerce.number().int().min(1800).max(new Date().getFullYear()).optional(),teamSize:z.coerce.number().int().min(1).optional(),responseTimeMinutes:z.coerce.number().int().min(0).optional(),googlePlaceId:z.string().max(300).optional(),mapEmbedUrl:httpUrl.optional(),socialLinks:z.object({facebook:httpUrl.optional(),instagram:httpUrl.optional(),linkedin:httpUrl.optional(),youtube:httpUrl.optional(),x:httpUrl.optional()}).optional(),faqs:z.array(z.object({question:z.string().min(1).max(500),answer:z.string().min(1).max(3000)})).max(50).optional(),offers:z.array(z.object({title:z.string().min(1).max(180),description:z.string().max(2000).optional(),code:z.string().max(50).optional(),validFrom:z.coerce.date().optional(),validUntil:z.coerce.date().optional(),isActive:z.boolean().optional()})).max(30).optional(),subcategories:z.array(objectId).max(30).optional(),services:z.array(z.string().max(150)).max(100).optional(),reviews:z.array(z.object({reviewerName:z.string().min(1).max(120),reviewerAvatar:httpUrl.optional(),rating:z.coerce.number().min(1).max(5),comment:z.string().max(3000).optional(),isVerified:z.boolean().optional(),createdAt:z.coerce.date().optional()})).max(100).optional(),timeZone:z.string().max(120).optional() }).strict();
 const emptyableUrl = httpUrl.or(z.literal(''));
-const mapEmbedUrl = emptyableUrl.refine(value => !value || ['google.com', 'www.google.com', 'maps.google.com', 'google.co.in', 'www.google.co.in', 'maps.google.co.in'].includes(new URL(value).hostname), 'Use a Google Maps embed URL');
+const mapEmbedUrl = emptyableUrl.refine(value => {
+  if (!value) return true;
+  try { return ['google.com', 'www.google.com', 'maps.google.com', 'google.co.in', 'www.google.co.in', 'maps.google.co.in'].includes(new URL(value).hostname); }
+  catch { return false; }
+}, 'Use a Google Maps embed URL');
 const ownerBusinessBody = businessBody.omit({ reviews: true, slug: true, photoCount: true, website: true, email: true, logo: true, mapEmbedUrl: true, socialLinks: true }).extend({
   website: emptyableUrl.optional(), email: z.union([z.string().email(), z.literal('')]).optional(), logo: emptyableUrl.optional(), mapEmbedUrl: mapEmbedUrl.optional(),
   socialLinks: z.object({ facebook: emptyableUrl.optional(), instagram: emptyableUrl.optional(), linkedin: emptyableUrl.optional(), youtube: emptyableUrl.optional(), x: emptyableUrl.optional() }).optional(),

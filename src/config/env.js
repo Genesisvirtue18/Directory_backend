@@ -2,8 +2,12 @@ import { z } from 'zod';
 
 const secret = z.string().min(32).refine(value => !value.startsWith('replace-'), 'Replace the placeholder with a random secret');
 const clientOrigin = z.url().refine(value => {
-  const url = new URL(value);
-  return ['http:', 'https:'].includes(url.protocol) && url.origin === value;
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && url.origin === value;
+  } catch {
+    return false;
+  }
 }, 'Use an HTTP(S) origin without a trailing slash or path');
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
