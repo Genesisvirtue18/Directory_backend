@@ -17,6 +17,44 @@ const validateCategorySelection = async body => {
 export const createBusiness = () => async(req,res,next)=>{try{const body=clean(req.validated.body); if(!body.description||!body.phone||!body.address?.addressLine1) throw new AppError('Description, phone, and address line 1 are required before submission',422); await validateCategorySelection(body); const item=await Business.create({...body,slug:await uniqueSlug(body.name),owner:req.user.id,listingStatus:'pending_review',verificationStatus:'pending'}); await item.populate('category','name'); sendSuccess(res,'Business created successfully',{item},201);}catch(e){next(e);}};
 export const ownerBusinesses = () => async(req,res,next)=>{try{const {page,limit}=req.validated.query;const filter={owner:req.user.id,deletedAt:null}; const [items,totalItems]=await Promise.all([Business.find(filter).populate('category','name').skip((page-1)*limit).limit(limit),Business.countDocuments(filter)]);sendSuccess(res,'Businesses retrieved successfully',{items,pagination:{page,limit,totalItems,totalPages:Math.ceil(totalItems/limit),hasNextPage:page*limit<totalItems,hasPreviousPage:page>1}});}catch(e){next(e);}};
 export const ownerBusiness = () => async(req,res,next)=>{try{sendSuccess(res,'Business retrieved successfully',{item:await getOwned(req.params.id,req.user.id)});}catch(e){next(e);}};
-export const updateBusiness = () => async(req,res,next)=>{try{const item=await getOwned(req.params.id,req.user.id); if(item.listingStatus==='pending_review') throw new AppError('A listing under review cannot be edited',409); const body=clean(req.validated.body); if (body.category || body.subcategories) await validateCategorySelection({ category: body.category || item.category, subcategories: body.subcategories ?? item.subcategories }); Object.assign(item,body); if (['draft', 'rejected'].includes(item.listingStatus)) { if(!item.description||!item.phone||!item.address?.addressLine1) throw new AppError('Description, phone, and address line 1 are required before submission',422); item.listingStatus = 'pending_review'; item.verificationStatus = 'pending'; item.rejectionReason = undefined; } await item.save(); await item.populate('category','name'); sendSuccess(res,'Business updated successfully',{item});}catch(e){next(e);}};
+export const updateBusiness = () => async (req, res, next) => {
+  let stage = 'load business';
+  try {
+    const item = await getOwned(req.params.id, req.user.id);
+    if (item.listingStatus === 'pending_review') throw new AppError('A listing under review cannot be edited', 409);
+
+    stage = 'validate update';
+    const body = clean(req.validated.body);
+    if (body.category || body.subcategories) {
+      await validateCategorySelection({ category: body.category || item.category, subcategories: body.subcategories ?? item.subcategories });
+    }
+
+    stage = 'apply update';
+    Object.assign(item, body);
+    if (['draft', 'rejected'].includes(item.listingStatus)) {
+      if (!item.description || !item.phone || !item.address?.addressLine1) {
+        throw new AppError('Description, phone, and address line 1 are required before submission', 422);
+      }
+      item.listingStatus = 'pending_review';
+      item.verificationStatus = 'pending';
+      item.rejectionReason = undefined;
+    }
+
+    stage = 'save business';
+    await item.save();
+    stage = 'populate category';
+    await item.populate('category', 'name');
+    sendSuccess(res, 'Business updated successfully', { item });
+  } catch (error) {
+    if (!(error instanceof AppError)) {
+      console.error('Owner business update failed', {
+        stage,
+        type: error.name || 'Error',
+        code: error.code || undefined,
+      });
+    }
+    next(error);
+  }
+};
 export const removeBusiness = () => async(req,res,next)=>{try{const item=await getOwned(req.params.id,req.user.id);item.deletedAt=new Date();item.listingStatus='deleted';await item.save();res.status(204).end();}catch(e){next(e);}};
 export const submitBusiness = () => async(req,res,next)=>{try{const item=await getOwned(req.params.id,req.user.id);if(!['draft','rejected'].includes(item.listingStatus))throw new AppError('This listing cannot be submitted',409);if(!item.description||!item.phone||!item.address?.addressLine1)throw new AppError('Description, phone, and address are required before submission',422);item.listingStatus='pending_review';item.verificationStatus='pending';item.rejectionReason=undefined;await item.save();sendSuccess(res,'Business submitted for review',{item});}catch(e){next(e);}};

@@ -79,6 +79,11 @@ export function apiRouter(config, databaseState) {
       });
     })).then(urls => sendSuccess(res, 'Images uploaded successfully', { urls }, 201)).catch(error => {
       if (error.status) return res.status(error.status).json({ success: false, message: error.message, errors: [] });
+      console.error('Image upload provider failed', {
+        type: error.name || 'Error',
+        status: error.http_code || error.status || undefined,
+        code: error.code || error.error?.code || undefined,
+      });
       res.status(502).json({ success: false, message: 'Unable to upload images', errors: [] });
     });
   });
