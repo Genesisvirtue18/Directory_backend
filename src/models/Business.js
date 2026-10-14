@@ -38,6 +38,12 @@ const reviewSchema = new Schema({
   createdAt: { type: Date, default: Date.now },
 }, { _id: true });
 
+const testimonialSchema = new Schema({
+  name: { type: String, required: true, trim: true, maxlength: 120 },
+  quote: { type: String, required: true, trim: true, maxlength: 2000 },
+  createdAt: { type: Date, default: Date.now },
+}, { _id: true });
+
 const socialLinksSchema = new Schema({
   facebook: urlField,
   instagram: urlField,
@@ -90,12 +96,12 @@ const businessSchema = new Schema({
   establishedYear: { type: Number, min: 1800, max: new Date().getFullYear(), validate: Number.isInteger },
   teamSize: { type: Number, min: 1, validate: Number.isInteger },
   responseTimeMinutes: { type: Number, min: 0, validate: Number.isInteger },
-  googlePlaceId: { type: String, trim: true, maxlength: 300 },
   mapEmbedUrl: urlField,
   socialLinks: socialLinksSchema,
   faqs: [faqSchema],
   offers: [offerSchema],
   reviews: [reviewSchema],
+  testimonials: { type: [testimonialSchema], default: [] },
   rejectionReason: { type: String, maxlength: 2000 },
   timeZone: { type: String, default: 'Asia/Kolkata' },
   verificationStatus: { type: String, enum: ['pending', 'verified', 'rejected'], default: 'pending' },
