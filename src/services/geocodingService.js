@@ -7,6 +7,28 @@ function normalize(value = '') {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function uniqueAddressParts(parts) {
+  const known = new Set([
+    parts.locality,
+    parts.city,
+    parts.state,
+    parts.postalCode,
+    parts.country,
+    parts.country?.toUpperCase() === 'IN' ? 'India' : '',
+  ].filter(Boolean).map(normalize));
+  const seen = new Set();
+  return [parts.addressLine1, parts.addressLine2, parts.landmark]
+    .filter(Boolean)
+    .flatMap(value => value.split(/[,;]/))
+    .map(value => value.trim())
+    .filter(value => {
+      const key = normalize(value);
+      if (!key || known.has(key) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function cacheKey(parts) {
   return Object.values(parts).map(value => normalize(String(value || ''))).join('|');
 }
@@ -30,35 +52,69 @@ export async function geocodeAddress(parts) {
   const lookup = requestQueue.then(async () => {
     const queuedCache = resultCache.get(key);
     if (queuedCache && queuedCache.expiresAt > Date.now()) return queuedCache.point;
-    const waitMs = Math.max(0, 1000 - (Date.now() - lastRequestAt));
-    if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
-    lastRequestAt = Date.now();
-
-    const street = [parts.addressLine1, parts.addressLine2, parts.landmark, parts.locality].filter(Boolean).join(', ');
-    const params = new URLSearchParams({
-      street,
-      city: parts.city,
-      state: parts.state,
-      postalcode: parts.postalCode || '',
-      country: parts.country?.toUpperCase() === 'IN' ? 'India' : parts.country || '',
+    const streetParts = uniqueAddressParts(parts);
+    const baseParams = {
       format: 'jsonv2',
-      limit: '3',
+      limit: '5',
       addressdetails: '1',
-    });
-    if (parts.country) params.set('countrycodes', parts.country.toLowerCase());
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'GenesisVirtueBusinessDirectory/1.0 (+https://business-directory-one-theta.vercel.app)',
-      },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!response.ok) throw new Error(`Geocoder returned HTTP ${response.status}`);
-    const results = await response.json();
-    const result = Array.isArray(results) ? results.find(item => matchesSubmittedAddress(item, parts)) : null;
+    };
+    if (parts.country) baseParams.countrycodes = parts.country.toLowerCase();
+
+    const queries = [];
+    if (streetParts.length) {
+      const structured = new URLSearchParams({
+        ...baseParams,
+        street: streetParts.join(', '),
+        city: parts.city,
+        state: parts.state,
+        postalcode: parts.postalCode || '',
+        country: parts.country?.toUpperCase() === 'IN' ? 'India' : parts.country || '',
+      });
+      queries.push(structured);
+    }
+    // Nominatim can miss Indian addresses when submitted as structured fields. Retry
+    // using a single deduplicated free-form query, while retaining country filtering.
+    const freeForm = [
+      ...streetParts,
+      parts.locality,
+      parts.city,
+      parts.state,
+      parts.postalCode,
+      parts.country?.toUpperCase() === 'IN' ? 'India' : parts.country,
+    ].filter(Boolean);
+    const fallback = new URLSearchParams({ ...baseParams, q: [...new Set(freeForm)].join(', ') });
+    queries.push(fallback);
+    const localityQuery = [
+      parts.locality,
+      parts.city,
+      parts.state,
+      parts.postalCode,
+      parts.country?.toUpperCase() === 'IN' ? 'India' : parts.country,
+    ].filter(Boolean);
+    if (localityQuery.length > 1) {
+      queries.push(new URLSearchParams({ ...baseParams, q: [...new Set(localityQuery)].join(', ') }));
+    }
+
+    let result = null;
+    for (const params of queries) {
+      const waitMs = Math.max(0, 1000 - (Date.now() - lastRequestAt));
+      if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
+      lastRequestAt = Date.now();
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'GenesisVirtueBusinessDirectory/1.0 (+https://business-directory-one-theta.vercel.app)',
+        },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) throw new Error(`Geocoder returned HTTP ${response.status}`);
+      const results = await response.json();
+      result = Array.isArray(results) ? results.find(item => matchesSubmittedAddress(item, parts)) : null;
+      if (result) break;
+    }
     const point = result ? { lat: Number(result.lat), lng: Number(result.lon), label: result.display_name || '' } : null;
     if (point && (!Number.isFinite(point.lat) || !Number.isFinite(point.lng))) throw new Error('Geocoder returned invalid coordinates');
-    resultCache.set(key, { point, expiresAt: Date.now() + CACHE_TTL_MS });
+    if (point) resultCache.set(key, { point, expiresAt: Date.now() + CACHE_TTL_MS });
     return point;
   });
 
