@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { rateLimit } from 'express-rate-limit';
+import { isIP } from 'node:net';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import mongoose from 'mongoose';
 import { apiRouter } from './routes/index.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
@@ -22,6 +23,13 @@ export function createApp(config, { databaseState = () => mongoose.connection.re
   app.use('/api/v1', rateLimit({
     windowMs: 15 * 60 * 1000, limit: rateLimitMax,
     standardHeaders: 'draft-8', legacyHeaders: false,
+    keyGenerator: req => {
+      const cloudflareIp = req.get('cf-connecting-ip')?.trim();
+      const clientIp = config.NODE_ENV === 'production' && cloudflareIp && isIP(cloudflareIp)
+        ? cloudflareIp
+        : req.ip;
+      return ipKeyGenerator(clientIp);
+    },
     handler: (req, res) => sendError(res, 429, 'Too many requests, please try again later'),
   }));
   app.use(express.json({ limit: '100kb' }));

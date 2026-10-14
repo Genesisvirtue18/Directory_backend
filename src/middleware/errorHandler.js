@@ -28,6 +28,9 @@ export function errorHandler(error, req, res, next) {
   } else if (error.type === 'entity.too.large') {
     status = 413;
     message = 'Request body is too large';
+  } else if (error.name === 'MulterError') {
+    status = 400;
+    message = error.code === 'LIMIT_FILE_SIZE' ? 'Each image must be 5 MB or smaller' : error.code === 'LIMIT_FILE_COUNT' ? 'Upload no more than 10 images at once' : 'The image upload request is invalid';
   } else if (error.status >= 400 && error.status < 500) {
     status = error.status;
     message = 'Invalid request';

@@ -27,13 +27,20 @@ const imageUpload = multer({
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 }, fileFilter: (_req, file, done) => done(null, /\.(csv|txt)$/i.test(file.originalname)) });
 const businessBody = z.object({ name:z.string().trim().min(2).max(180), slug:z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(180).optional(), category:objectId, description:z.string().max(10000).optional(), phone:z.string().max(30).optional(), alternatePhone:z.string().max(30).optional(), whatsapp:z.string().max(30).optional(), email:z.string().email().optional(), website:httpUrl.optional(), address:z.object({addressLine1:z.string().max(250).optional(),addressLine2:z.string().max(250).optional(),landmark:z.string().max(150).optional(),city:z.string().max(120).optional(),locality:z.string().max(120).optional(),state:z.string().max(120).optional(),postalCode:z.string().max(20).optional(),country:z.string().length(2).optional()}).partial().optional(), workingHours:z.array(z.object({day:z.enum(['monday','tuesday','wednesday','thursday','friday','saturday','sunday']),isClosed:z.boolean().optional(),opens:z.string().optional(),closes:z.string().optional()})).max(7).optional(), logo:httpUrl.optional(),images:z.array(httpUrl).max(30).optional(),photoCount:z.coerce.number().int().min(0).optional(),priceRange:z.enum(['budget','moderate','expensive','luxury']).optional(),keywords:z.array(z.string().max(80)).max(30).optional(),highlights:z.array(z.string().max(180)).max(30).optional(),amenities:z.array(z.string().max(180)).max(50).optional(),establishedYear:z.coerce.number().int().min(1800).max(new Date().getFullYear()).optional(),teamSize:z.coerce.number().int().min(1).optional(),responseTimeMinutes:z.coerce.number().int().min(0).optional(),googlePlaceId:z.string().max(300).optional(),mapEmbedUrl:httpUrl.optional(),socialLinks:z.object({facebook:httpUrl.optional(),instagram:httpUrl.optional(),linkedin:httpUrl.optional(),youtube:httpUrl.optional(),x:httpUrl.optional()}).optional(),faqs:z.array(z.object({question:z.string().min(1).max(500),answer:z.string().min(1).max(3000)})).max(50).optional(),offers:z.array(z.object({title:z.string().min(1).max(180),description:z.string().max(2000).optional(),code:z.string().max(50).optional(),validFrom:z.coerce.date().optional(),validUntil:z.coerce.date().optional(),isActive:z.boolean().optional()})).max(30).optional(),subcategories:z.array(objectId).max(30).optional(),services:z.array(z.string().max(150)).max(100).optional(),reviews:z.array(z.object({reviewerName:z.string().min(1).max(120),reviewerAvatar:httpUrl.optional(),rating:z.coerce.number().min(1).max(5),comment:z.string().max(3000).optional(),isVerified:z.boolean().optional(),createdAt:z.coerce.date().optional()})).max(100).optional(),timeZone:z.string().max(120).optional() }).strict();
 const emptyableUrl = httpUrl.or(z.literal(''));
-const mapEmbedUrl = emptyableUrl.refine(value => {
+const googleMapsUrl = emptyableUrl.refine(value => {
   if (!value) return true;
-  try { return ['google.com', 'www.google.com', 'maps.google.com', 'google.co.in', 'www.google.co.in', 'maps.google.co.in'].includes(new URL(value).hostname); }
-  catch { return false; }
-}, 'Use a Google Maps embed URL');
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === 'maps.app.goo.gl' || host === 'goo.gl' || host === 'google.com' || host.endsWith('.google.com') || host === 'google.co.in' || host.endsWith('.google.co.in');
+  } catch { return false; }
+}, 'Use a Google Maps link');
 const ownerBusinessBody = businessBody.omit({ reviews: true, slug: true, photoCount: true, website: true, email: true, logo: true, mapEmbedUrl: true, socialLinks: true }).extend({
-  website: emptyableUrl.optional(), email: z.union([z.string().email(), z.literal('')]).optional(), logo: emptyableUrl.optional(), mapEmbedUrl: mapEmbedUrl.optional(),
+  website: emptyableUrl.optional(), email: z.union([z.string().email(), z.literal('')]).optional(), logo: emptyableUrl.optional(), mapEmbedUrl: googleMapsUrl.optional(),
+  phone: z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit Indian phone number'),
+  alternatePhone: z.union([z.string().regex(/^[6-9]\d{9}$/), z.literal('')]).optional(),
+  whatsapp: z.union([z.string().regex(/^[6-9]\d{9}$/), z.literal('')]).optional(),
+  services: z.array(z.string().trim().min(1).max(150)).min(1, 'Select at least one service'),
+  address: z.object({ addressLine1: z.string().trim().min(1).max(250), addressLine2: z.string().max(250).optional(), landmark: z.string().max(150).optional(), city: z.string().trim().min(1).max(120), locality: z.string().max(120).optional(), state: z.string().trim().min(1).max(120), postalCode: z.string().max(20).optional(), country: z.string().length(2).optional() }),
   socialLinks: z.object({ facebook: emptyableUrl.optional(), instagram: emptyableUrl.optional(), linkedin: emptyableUrl.optional(), youtube: emptyableUrl.optional(), x: emptyableUrl.optional() }).optional(),
   location: z.object({ type: z.literal('Point').default('Point'), coordinates: z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]) }).nullable().optional(),
 });
@@ -67,7 +74,7 @@ export function apiRouter(config, databaseState) {
     if (!files.length) return res.status(400).json({ success: false, message: 'Select at least one image', errors: [] });
     const { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } = config;
     if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
-      return res.status(503).json({ success: false, message: 'Image uploads are not configured', errors: [] });
+      return res.status(503).json({ success: false, message: 'Image uploads are not configured. The site administrator must add the Cloudinary cloud name, API key, and API secret to the server environment.', errors: [] });
     }
     configureCloudinary(config);
     Promise.all(files.map(async file => {
@@ -95,7 +102,7 @@ export function apiRouter(config, databaseState) {
     });
   });
   router.get('/owner/businesses', ...ownerOnly, validate(z.object({query:pagination})), owner.ownerBusinesses());
-  router.post('/owner/businesses', ...ownerOnly, validate(z.object({body:ownerBusinessBody})), owner.createBusiness());
+  router.post('/owner/businesses', ...ownerOnly, validate(z.object({body:ownerBusinessBody.extend({ email: z.string().email('Enter a valid email address') })})), owner.createBusiness());
   router.get('/owner/businesses/:id', ...ownerOnly, validate(idParam), owner.ownerBusiness());
   router.patch('/owner/businesses/:id', ...ownerOnly, validate(idParam.extend({body:ownerBusinessBody.partial()})), owner.updateBusiness());
   router.delete('/owner/businesses/:id', ...ownerOnly, validate(idParam), owner.removeBusiness());
