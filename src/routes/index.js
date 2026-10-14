@@ -11,7 +11,9 @@ import * as users from '../controllers/userController.js';
 import * as directory from '../controllers/directoryController.js';
 import * as owner from '../controllers/ownerBusinessController.js';
 import * as admin from '../controllers/adminController.js';
+import { geocodeAddress } from '../services/geocodingService.js';
 import { authLogin, authRegister, idParam, objectId, pagination, refreshSchema } from '../validators/common.js';
+import { sendError, sendSuccess } from '../utils/response.js';
 
 const authLimiter = (req, res, next) => next(); // General API limiter is mounted by app; provider-specific limits can be configured per deployment.
 const pageQuery = pagination.extend({ search: z.string().trim().max(100).optional(), parent: objectId.optional(), active: z.coerce.boolean().optional(), state: z.string().max(180).optional(), city: z.string().max(180).optional() });
@@ -69,6 +71,26 @@ export function apiRouter(config, databaseState) {
   router.get('/locations/localities', validate(z.object({query:pageQuery})), directory.locations('locality'));
   router.get('/locations/popular-cities', validate(z.object({query:pagination})), directory.locations('city'));
   const ownerOnly = [authenticate(config), authorizeRoles('business_owner', 'admin', 'super_admin')];
+  const geocodeQuery = z.object({ query: z.object({
+    addressLine1: z.string().trim().min(1).max(250),
+    addressLine2: z.string().trim().max(250).optional(),
+    landmark: z.string().trim().max(150).optional(),
+    locality: z.string().trim().max(120).optional(),
+    city: z.string().trim().min(1).max(120),
+    state: z.string().trim().min(1).max(120),
+    postalCode: z.string().trim().max(20).optional(),
+    country: z.string().trim().length(2).optional(),
+  }) });
+  router.get('/owner/geocode', ...ownerOnly, validate(geocodeQuery), async (req, res) => {
+    try {
+      const point = await geocodeAddress(req.validated.query);
+      if (!point) return sendError(res, 404, 'No map result matched the city, state, and postal code you entered. Check those address fields and try again.');
+      return sendSuccess(res, 'Address located successfully', { point });
+    } catch (error) {
+      console.error('Address lookup failed', { type: error.name || 'Error' });
+      return sendError(res, 503, 'Address lookup is temporarily unavailable. Please retry in a moment.');
+    }
+  });
   router.post('/owner/uploads', ...ownerOnly, imageUpload.array('images', 10), (req, res) => {
     const files = req.files || [];
     if (!files.length) return res.status(400).json({ success: false, message: 'Select at least one image', errors: [] });
