@@ -80,6 +80,9 @@ test('environment rejects missing values, placeholders and shared secrets', () =
   assert.throws(() => parseEnv({}), /Invalid environment configuration/);
   const env = { MONGODB_URI: 'mongodb://localhost/test', JWT_ACCESS_SECRET: 'a'.repeat(32), JWT_REFRESH_SECRET: 'b'.repeat(32), CLIENT_URL: config.CLIENT_URL };
   assert.equal(parseEnv(env).PORT, 5000);
+  assert.throws(() => parseEnv({ ...env, GOOGLE_CLIENT_ID: 'client-id' }), /Configure all Google Business Profile variables together/);
+  assert.equal(parseEnv({ ...env, GOOGLE_CLIENT_ID: 'client-id', GOOGLE_CLIENT_SECRET: 'client-secret', GOOGLE_REDIRECT_URI: 'https://api.example.com/api/v1/google-business-profile/callback', GOOGLE_TOKEN_ENCRYPTION_KEY: 'a'.repeat(64) }).GOOGLE_CLIENT_ID, 'client-id');
+  assert.throws(() => parseEnv({ ...env, GOOGLE_CLIENT_ID: 'client-id', GOOGLE_CLIENT_SECRET: 'client-secret', GOOGLE_REDIRECT_URI: 'https://api.example.com/callback', GOOGLE_TOKEN_ENCRYPTION_KEY: 'not-hex' }), /GOOGLE_TOKEN_ENCRYPTION_KEY/);
   assert.throws(() => parseEnv({ ...env, JWT_REFRESH_SECRET: env.JWT_ACCESS_SECRET }), /must differ/);
   assert.throws(() => parseEnv({ ...env, PORT: 'no' }), /PORT/);
   assert.throws(() => parseEnv({ ...env, JWT_ACCESS_SECRET: 'replace-with-a-random-secret-at-least-32-characters' }), /placeholder/);

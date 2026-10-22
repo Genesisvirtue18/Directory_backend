@@ -14,6 +14,26 @@ export const categories = () => async (req, res, next) => { try { const q = req.
 export const categoryBySlug = () => async (req, res, next) => { try { const item = await Category.findOne({ slug: req.params.slug, isActive: true }); if (!item) throw new AppError('Category not found', 404); sendSuccess(res, 'Category retrieved successfully', { item }); } catch (e) { next(e); } };
 export const categoryTree = () => async (req,res,next) => { try { const items = await Category.find({ isActive: true }).sort('displayOrder name').lean(); const roots = []; const map = new Map(items.map(x => [String(x._id), { ...x, children: [] }])); for (const item of map.values()) item.parentCategory && map.has(String(item.parentCategory)) ? map.get(String(item.parentCategory)).children.push(item) : roots.push(item); sendSuccess(res,'Category tree retrieved successfully',{items:roots}); } catch(e){next(e);} };
 export const locations = type => () => async (req,res,next) => { try { const q=req.validated.query; const filter={ type, isActive:true }; if(q.search) filter.name=new RegExp(q.search.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'); if(q.state) { const state=await Location.findOne({slug:q.state,type:'state'}); filter.state=state?._id || null; } if(q.city) { const city=await Location.findOne({slug:q.city,type:'city'}); filter.city=city?._id || null; } sendSuccess(res,`${type}s retrieved successfully`,await pageResult(Location,filter,req)); } catch(e){next(e);} };
+export const businessCities = () => async (req, res, next) => {
+  try {
+    const cityNames = await Business.distinct('address.city', {
+      listingStatus: 'published',
+      deletedAt: null,
+      'address.city': { $type: 'string', $ne: '' },
+    });
+    const citiesByName = new Map();
+    for (const city of cityNames) {
+      const name = typeof city === 'string' ? city.trim() : '';
+      if (name && !citiesByName.has(name.toLocaleLowerCase())) citiesByName.set(name.toLocaleLowerCase(), name);
+    }
+    const items = [...citiesByName.values()]
+      .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))
+      .map(name => ({ name }));
+    sendSuccess(res, 'Cities with published businesses retrieved successfully', { items });
+  } catch (error) {
+    next(error);
+  }
+};
 const weekdayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const localClock = (date, timeZone) => {
   try {

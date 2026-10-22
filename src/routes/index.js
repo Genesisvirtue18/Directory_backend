@@ -11,6 +11,7 @@ import * as users from '../controllers/userController.js';
 import * as directory from '../controllers/directoryController.js';
 import * as owner from '../controllers/ownerBusinessController.js';
 import * as admin from '../controllers/adminController.js';
+import { googleBusinessProfile } from '../controllers/googleBusinessProfileController.js';
 import { geocodeAddress } from '../services/geocodingService.js';
 import { authLogin, authRegister, idParam, objectId, pagination, refreshSchema } from '../validators/common.js';
 import { sendError, sendSuccess } from '../utils/response.js';
@@ -49,6 +50,8 @@ const ownerBusinessBody = businessBody.omit({ reviews: true, slug: true, photoCo
 
 export function apiRouter(config, databaseState) {
   const router = Router();
+  const google = googleBusinessProfile(config);
+  router.get('/google-business-profile/callback', google.callback);
   router.get('/health', healthController(config, databaseState));
   router.post('/auth/register', authLimiter, validate(authRegister), auth.register(config));
   router.post('/auth/login', authLimiter, validate(authLogin), auth.login(config));
@@ -67,6 +70,7 @@ export function apiRouter(config, databaseState) {
   router.get('/categories/tree', directory.categoryTree());
   router.get('/categories/:slug', directory.categoryBySlug());
   router.get('/locations/states', validate(z.object({query:pageQuery})), directory.locations('state'));
+  router.get('/locations/business-cities', directory.businessCities());
   router.get('/locations/cities', validate(z.object({query:pageQuery})), directory.locations('city'));
   router.get('/locations/localities', validate(z.object({query:pageQuery})), directory.locations('locality'));
   router.get('/locations/popular-cities', validate(z.object({query:pagination})), directory.locations('city'));
@@ -128,6 +132,11 @@ export function apiRouter(config, databaseState) {
   router.get('/owner/businesses/:id', ...ownerOnly, validate(idParam), owner.ownerBusiness());
   router.patch('/owner/businesses/:id', ...ownerOnly, validate(idParam.extend({body:ownerBusinessBody.partial()})), owner.updateBusiness());
   router.delete('/owner/businesses/:id', ...ownerOnly, validate(idParam), owner.removeBusiness());
+  router.get('/owner/businesses/:id/google/status', ...ownerOnly, validate(idParam), ...google.status);
+  router.post('/owner/businesses/:id/google/connect', ...ownerOnly, validate(idParam), ...google.connect);
+  router.get('/owner/businesses/:id/google/locations', ...ownerOnly, validate(idParam), ...google.locations);
+  router.put('/owner/businesses/:id/google/location', ...ownerOnly, validate(idParam.extend({ body: z.object({ accountName: z.string().min(1).max(200), locationName: z.string().min(1).max(400) }).strict() })), ...google.selectLocation);
+  router.delete('/owner/businesses/:id/google/disconnect', ...ownerOnly, validate(idParam), ...google.disconnect);
   router.post('/owner/businesses/:id/submit', ...ownerOnly, validate(idParam), owner.submitBusiness());
   const adminOnly = [authenticate(config), authorizeRoles('admin', 'super_admin')];
   const categoryBody = z.object({ name: z.string().trim().min(2).max(120), parentCategory: objectId.optional() }).strict();
@@ -145,5 +154,6 @@ const publicQuery=pageQuery.extend({q:z.string().trim().max(100).optional(),cate
   router.get('/businesses', validate(z.object({query:publicQuery})), directory.businessList());
   router.get('/search', validate(z.object({query:publicQuery})), directory.businessList());
   router.get('/businesses/:slug', directory.businessBySlug());
+  router.get('/businesses/:slug/google-reviews', ...google.reviews);
   return router;
 }

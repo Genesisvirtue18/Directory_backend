@@ -25,9 +25,16 @@ const schema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.union([z.url(), z.literal('')]).optional(),
+  GOOGLE_TOKEN_ENCRYPTION_KEY: z.union([z.string().regex(/^[a-fA-F0-9]{64}$/), z.literal('')]).optional(),
 }).refine(value => value.JWT_ACCESS_SECRET !== value.JWT_REFRESH_SECRET, {
   path: ['JWT_REFRESH_SECRET'], message: 'Access and refresh secrets must differ',
-});
+}).refine(value => {
+  const google = [value.GOOGLE_CLIENT_ID, value.GOOGLE_CLIENT_SECRET, value.GOOGLE_REDIRECT_URI, value.GOOGLE_TOKEN_ENCRYPTION_KEY];
+  return google.every(item => !item) || google.every(Boolean);
+}, { path: ['GOOGLE_CLIENT_ID'], message: 'Configure all Google Business Profile variables together' });
 
 export function parseEnv(source = process.env) {
   const result = schema.safeParse(source);
