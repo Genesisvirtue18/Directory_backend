@@ -17,8 +17,12 @@ export const stateToken = () => randomBytes(32).toString('base64url');
 export async function googleFetch(url, accessToken, options = {}) {
   const response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${accessToken}`, ...(options.headers || {}) }, signal: AbortSignal.timeout(12000) });
   if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
     const error = new Error(response.status === 401 ? 'GOOGLE_REAUTH' : response.status === 403 ? 'GOOGLE_PERMISSION' : response.status === 404 ? 'GOOGLE_NOT_FOUND' : 'GOOGLE_UNAVAILABLE');
-    error.status = response.status; throw error;
+    error.status = response.status;
+    error.upstreamStatus = response.status;
+    error.googleReason = body.error?.status || body.error?.errors?.[0]?.reason || body.error?.details?.[0]?.reason;
+    throw error;
   }
   return response.json();
 }
@@ -26,7 +30,7 @@ export async function googleFetch(url, accessToken, options = {}) {
 export async function getGoogleAccessToken(connection, config) {
   const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: config.GOOGLE_CLIENT_ID, client_secret: config.GOOGLE_CLIENT_SECRET, refresh_token: decryptRefreshToken(connection.refreshToken, config), grant_type: 'refresh_token' }), signal: AbortSignal.timeout(12000) });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body.access_token) { const error = new Error(response.status === 400 ? 'GOOGLE_REAUTH' : 'GOOGLE_UNAVAILABLE'); error.status = response.status; throw error; }
+  if (!response.ok || !body.access_token) { const error = new Error(response.status === 400 ? 'GOOGLE_REAUTH' : 'GOOGLE_UNAVAILABLE'); error.status = response.status; error.upstreamStatus = response.status; error.googleReason = body.error; throw error; }
   return body.access_token;
 }
 
@@ -45,4 +49,17 @@ export function safeGoogleError(error) {
   if (error.message === 'GOOGLE_PERMISSION') return [403, 'Google denied access. Confirm this account manages a verified Business Profile and try again.'];
   if (error.message === 'GOOGLE_NOT_FOUND') return [404, 'The selected Google location is unavailable. Choose it again.'];
   return [503, 'Google Business Profile is temporarily unavailable. Please try again shortly.'];
+}
+
+export function logGoogleFailure(operation, error) {
+  const reason = typeof error?.googleReason === 'string' && error.googleReason.length <= 80 && /^[A-Za-z0-9_.-]+$/.test(error.googleReason) ? error.googleReason : undefined;
+  const code = typeof error?.code === 'string' && error.code.length <= 80 && /^[A-Za-z0-9_.-]+$/.test(error.code) ? error.code
+    : typeof error?.message === 'string' && /^GOOGLE_[A-Z_]+$/.test(error.message) ? error.message : undefined;
+  console.error('[Google Business Profile] Request failed', {
+    operation,
+    status: Number.isInteger(error?.upstreamStatus) ? error.upstreamStatus : Number.isInteger(error?.status) ? error.status : undefined,
+    reason,
+    code,
+    errorType: typeof error?.name === 'string' ? error.name : undefined,
+  });
 }

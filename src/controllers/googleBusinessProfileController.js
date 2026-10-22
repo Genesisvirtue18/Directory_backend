@@ -1,6 +1,6 @@
 import { Business } from '../models/Business.js';
 import { GoogleBusinessConnection, GoogleBusinessOAuthState, GoogleBusinessSelection } from '../models/GoogleBusinessConnection.js';
-import { encryptRefreshToken, getGoogleAccessToken, googleFetch, hashState, listAllPages, safeGoogleError, stateToken } from '../services/googleBusinessProfile.js';
+import { encryptRefreshToken, getGoogleAccessToken, googleFetch, hashState, listAllPages, logGoogleFailure, safeGoogleError, stateToken } from '../services/googleBusinessProfile.js';
 import { sendError, sendSuccess } from '../utils/response.js';
 
 const expiry = () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -49,7 +49,7 @@ export const googleBusinessProfile = config => ({
       const accounts = await listAllPages('https://mybusinessaccountmanagement.googleapis.com/v1/accounts', access, 'accounts');
       const locations = (await Promise.all(accounts.filter(account => account.name).map(account => listAllPages(`https://mybusinessbusinessinformation.googleapis.com/v1/${account.name}/locations?readMask=name,title,storefrontAddress,metadata&pageSize=100`, access, 'locations').then(items => items.map(location => ({ ...location, accountName: account.name })))))).flat();
       return sendSuccess(res, 'Google locations retrieved', { locations: locations.map(location => ({ accountName: location.accountName, locationName: location.name, title: location.title, address: location.storefrontAddress?.addressLines?.join(', '), city: location.storefrontAddress?.locality, mapsUri: location.metadata?.mapsUri })) });
-    } catch (error) { const [status, message] = safeGoogleError(error); return sendError(res, status, message); }
+    } catch (error) { logGoogleFailure('locations', error); const [status, message] = safeGoogleError(error); return sendError(res, status, message); }
   }],
   selectLocation: [noStore, async (req, res) => {
     const item = await owned(req.params.id, req.user); if (ownerFail(res, item)) return;
@@ -62,7 +62,7 @@ export const googleBusinessProfile = config => ({
       if (result.name !== locationName) return sendError(res, 400, 'Google returned a different location than the one selected');
       await GoogleBusinessSelection.findOneAndUpdate({ business: item._id }, { owner: req.user._id, accountName, locationName, title: result.title || item.name, mapsUri: result.metadata?.mapsUri, expiresAt: expiry() }, { upsert: true, runValidators: true });
       return sendSuccess(res, 'Google location selected', { selectedLocation: { title: result.title || item.name } });
-    } catch (error) { const [status, message] = safeGoogleError(error); return sendError(res, status, message); }
+    } catch (error) { logGoogleFailure('select location', error); const [status, message] = safeGoogleError(error); return sendError(res, status, message); }
   }],
   disconnect: [noStore, async (req, res) => {
     const item = await owned(req.params.id, req.user); if (ownerFail(res, item)) return;
@@ -83,6 +83,6 @@ export const googleBusinessProfile = config => ({
       target.searchParams.set('pageSize', String(pageSize)); if (typeof req.query.pageToken === 'string' && req.query.pageToken.length < 2048) target.searchParams.set('pageToken', req.query.pageToken);
       const data = await googleFetch(target, access);
       return sendSuccess(res, 'Google reviews retrieved', { available: true, locationTitle: selection.title, mapsUri: selection.mapsUri, averageRating: data.averageRating || 0, totalReviewCount: data.totalReviewCount || 0, reviews: (data.reviews || []).map(review => ({ name: review.reviewer?.displayName || 'Google user', photoUrl: review.reviewer?.profilePhotoUrl, rating: ({ ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 })[review.starRating] || 0, comment: review.comment || '', createTime: review.createTime, updateTime: review.updateTime })), nextPageToken: data.nextPageToken || null });
-    } catch (error) { const [status, message] = safeGoogleError(error); if (status === 404) return sendSuccess(res, 'Google reviews are unavailable', { available: false, reviews: [], mapsUri: selection.mapsUri }); return sendError(res, status, message); }
+    } catch (error) { logGoogleFailure('reviews', error); const [status, message] = safeGoogleError(error); if (status === 404) return sendSuccess(res, 'Google reviews are unavailable', { available: false, reviews: [], mapsUri: selection.mapsUri }); return sendError(res, status, message); }
   }],
 });
