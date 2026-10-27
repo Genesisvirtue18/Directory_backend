@@ -103,7 +103,7 @@ export async function geocodeAddress(parts) {
       const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
         headers: {
           Accept: 'application/json',
-          'User-Agent': 'GenesisVirtueBusinessDirectory/1.0 (+https://business-directory-one-theta.vercel.app)',
+          'User-Agent': 'LokalLens/1.0 (+https://business-directory-one-theta.vercel.app)',
         },
         signal: AbortSignal.timeout(12000),
       });

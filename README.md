@@ -1,4 +1,4 @@
-# Business Directory API — Day 1
+# Lokal Lens API
 
 Backend foundation using Node.js 22.17+, Express 5, MongoDB, Mongoose 8, JavaScript ES modules, Zod, Helmet, CORS, Morgan and express-rate-limit. Node's test runner and Supertest cover the application; mongodb-memory-server provides an isolated real MongoDB for integration checks.
 
@@ -61,7 +61,7 @@ Invoke-RestMethod https://directory-backend-ai6r.onrender.com/api/v1/health | Co
 Healthy responses use HTTP 200:
 
 ```json
-{"success":true,"message":"Business Directory API is healthy","data":{"status":"ok","database":"connected","environment":"development","uptime":1,"timestamp":"2026-09-14T00:00:00.000Z"}}
+{"success":true,"message":"Lokal Lens API is healthy","data":{"status":"ok","database":"connected","environment":"development","uptime":1,"timestamp":"2026-09-14T00:00:00.000Z"}}
 ```
 
 Disconnected MongoDB returns HTTP 503 with `{"success":false,"message":"Database unavailable","errors":[]}`. Health checks use Mongoose connection state, not a per-request database ping. Unknown paths return 404. JSON parsing, request size, rate limit, validation, duplicate key and cast errors share the error shape. Production errors omit internal details; development adds only the error type for server failures, never raw driver messages or stacks.

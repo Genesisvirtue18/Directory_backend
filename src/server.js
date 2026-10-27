@@ -40,7 +40,7 @@ try {
   try { config = parseEnv(); } catch (error) { console.error(error.message); throw error; }
   await connectDatabase(config.MONGODB_URI, { production: config.NODE_ENV === 'production' });
   if (!stopping) {
-    server = createApp(config).listen(config.PORT, () => console.info(`Business Directory API listening on port ${config.PORT}`));
+    server = createApp(config).listen(config.PORT, () => console.info(`Lokal Lens API listening on port ${config.PORT}`));
     server.on('error', () => void shutdown('HTTP server failure', 1));
   } else {
     await disconnectDatabase();

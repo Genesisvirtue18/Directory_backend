@@ -16,6 +16,10 @@ The integration is optional. Leave all four `GOOGLE_*` variables blank to keep t
 
 5. Ensure `CLIENT_URL` points to the frontend origin. The OAuth callback returns to `/business-owner?googleBusinessProfile=connected` or `...=error`.
 
+## Location selection troubleshooting
+
+OAuth connection can succeed while location lookup is unavailable: Google authorization and Business Profile API access are separate. If the location chooser reports that API access is not enabled, confirm that Google approved Business Profile API access for the same Cloud project as the OAuth client, and that Account Management and Business Information APIs are enabled for that project. Check the API response status and reason in the server logs (`[Google Business Profile] Request failed`). Reconnect the Google account only when the error indicates missing or expired authorization; reconnecting does not enable APIs or grant project access.
+
 ## Product behavior and data handling
 
 Owners connect Google and select one account location for each directory listing. The API rechecks that the authenticated owner owns that listing for every management request. Google authorization state is random, single-use and expires after 10 minutes. Refresh tokens are stored encrypted with AES-256-GCM. Disconnect deletes the stored token and selection immediately.

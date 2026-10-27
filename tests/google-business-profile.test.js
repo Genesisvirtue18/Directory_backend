@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decryptRefreshToken, encryptRefreshToken, hashState, listAllPages, safeGoogleError, stateToken } from '../src/services/googleBusinessProfile.js';
+import { decryptRefreshToken, encryptRefreshToken, googleFetch, hashState, listAllPages, safeGoogleError, stateToken } from '../src/services/googleBusinessProfile.js';
 
 const config = { GOOGLE_TOKEN_ENCRYPTION_KEY: 'ab'.repeat(32) };
 
@@ -34,4 +34,54 @@ test('Google list pagination is bounded and follows nextPageToken', async () => 
 test('Google API failures map to non-sensitive messages', () => {
   assert.deepEqual(safeGoogleError(new Error('GOOGLE_REAUTH')), [401, 'Google access expired. Reconnect your Business Profile.']);
   assert.doesNotMatch(safeGoogleError(new Error('private token response'))[1], /private|token response/);
+});
+
+test('Google Business Profile API-disabled response gets actionable guidance', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 403,
+    json: async () => ({
+      error: {
+        status: 'PERMISSION_DENIED',
+        details: [{ metadata: { reason: 'SERVICE_DISABLED' } }],
+      },
+    }),
+  });
+  try {
+    await assert.rejects(googleFetch('https://example.test/locations', 'access-token'), error => {
+      assert.equal(error.message, 'GOOGLE_API_DISABLED');
+      assert.deepEqual(safeGoogleError(error), [
+        503,
+        'Google Business Profile API access is not enabled for this project. Confirm Google has approved API access and enable the Account Management and Business Information APIs in Google Cloud.',
+      ]);
+      return true;
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Google scope and quota errors are reported distinctly', async () => {
+  const originalFetch = globalThis.fetch;
+  const failures = [
+    { status: 403, reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT', expected: 'GOOGLE_SCOPE' },
+    { status: 429, reason: 'rateLimitExceeded', expected: 'GOOGLE_RATE_LIMITED' },
+  ];
+  try {
+    for (const failure of failures) {
+      globalThis.fetch = async () => ({
+        ok: false,
+        status: failure.status,
+        json: async () => ({ error: { errors: [{ reason: failure.reason }] } }),
+      });
+      await assert.rejects(googleFetch('https://example.test/locations', 'access-token'), error => {
+        assert.equal(error.message, failure.expected);
+        assert.ok(safeGoogleError(error)[1].length > 0);
+        return true;
+      });
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

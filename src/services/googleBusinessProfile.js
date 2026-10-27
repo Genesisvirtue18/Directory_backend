@@ -14,14 +14,34 @@ export function decryptRefreshToken(value, config) {
 }
 export const stateToken = () => randomBytes(32).toString('base64url');
 
+function googleErrorReason(error) {
+  const details = error?.details || [];
+  return error?.errors?.[0]?.reason
+    || details.find(detail => detail?.metadata?.reason)?.metadata?.reason
+    || details.find(detail => detail?.reason)?.reason
+    || error?.status;
+}
+
 export async function googleFetch(url, accessToken, options = {}) {
   const response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${accessToken}`, ...(options.headers || {}) }, signal: AbortSignal.timeout(12000) });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    const error = new Error(response.status === 401 ? 'GOOGLE_REAUTH' : response.status === 403 ? 'GOOGLE_PERMISSION' : response.status === 404 ? 'GOOGLE_NOT_FOUND' : 'GOOGLE_UNAVAILABLE');
+    const googleReason = googleErrorReason(body.error);
+    const reason = typeof googleReason === 'string' ? googleReason.toLowerCase() : '';
+    const disabledApi = ['service_disabled', 'servicedisabled', 'accessnotconfigured', 'api_disabled'].includes(reason);
+    const insufficientScope = ['access_token_scope_insufficient', 'insufficient_scope'].includes(reason);
+    const rateLimited = response.status === 429 || ['ratelimitexceeded', 'userratelimitexceeded', 'quotaexceeded'].includes(reason);
+    const message = disabledApi ? 'GOOGLE_API_DISABLED'
+      : insufficientScope ? 'GOOGLE_SCOPE'
+        : rateLimited ? 'GOOGLE_RATE_LIMITED'
+          : response.status === 401 ? 'GOOGLE_REAUTH'
+            : response.status === 403 ? 'GOOGLE_PERMISSION'
+              : response.status === 404 ? 'GOOGLE_NOT_FOUND'
+                : 'GOOGLE_UNAVAILABLE';
+    const error = new Error(message);
     error.status = response.status;
     error.upstreamStatus = response.status;
-    error.googleReason = body.error?.status || body.error?.errors?.[0]?.reason || body.error?.details?.[0]?.reason;
+    error.googleReason = googleReason;
     throw error;
   }
   return response.json();
@@ -46,6 +66,9 @@ export async function listAllPages(url, token, key) {
 
 export function safeGoogleError(error) {
   if (error.message === 'GOOGLE_REAUTH') return [401, 'Google access expired. Reconnect your Business Profile.'];
+  if (error.message === 'GOOGLE_API_DISABLED') return [503, 'Google Business Profile API access is not enabled for this project. Confirm Google has approved API access and enable the Account Management and Business Information APIs in Google Cloud.'];
+  if (error.message === 'GOOGLE_SCOPE') return [403, 'Google access is missing the required Business Profile permissions. Disconnect and reconnect, then grant the requested permissions.'];
+  if (error.message === 'GOOGLE_RATE_LIMITED') return [503, 'Google Business Profile request limit reached. Please try again later.'];
   if (error.message === 'GOOGLE_PERMISSION') return [403, 'Google denied access. Confirm this account manages a verified Business Profile and try again.'];
   if (error.message === 'GOOGLE_NOT_FOUND') return [404, 'The selected Google location is unavailable. Choose it again.'];
   return [503, 'Google Business Profile is temporarily unavailable. Please try again shortly.'];
