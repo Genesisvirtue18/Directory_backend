@@ -51,6 +51,7 @@ test('Google Business Profile API-disabled response gets actionable guidance', a
   try {
     await assert.rejects(googleFetch('https://example.test/locations', 'access-token'), error => {
       assert.equal(error.message, 'GOOGLE_API_DISABLED');
+      assert.equal(error.googleApi, 'example.test');
       assert.deepEqual(safeGoogleError(error), [
         503,
         'Google Business Profile API access is not enabled for this project. Confirm Google has approved API access and enable the Account Management and Business Information APIs in Google Cloud.',
@@ -66,7 +67,7 @@ test('Google scope and quota errors are reported distinctly', async () => {
   const originalFetch = globalThis.fetch;
   const failures = [
     { status: 403, reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT', expected: 'GOOGLE_SCOPE' },
-    { status: 429, reason: 'rateLimitExceeded', expected: 'GOOGLE_RATE_LIMITED' },
+    { status: 429, reason: 'RATE_LIMIT_EXCEEDED', expected: 'GOOGLE_RATE_LIMITED' },
   ];
   try {
     for (const failure of failures) {
@@ -77,6 +78,7 @@ test('Google scope and quota errors are reported distinctly', async () => {
       });
       await assert.rejects(googleFetch('https://example.test/locations', 'access-token'), error => {
         assert.equal(error.message, failure.expected);
+        assert.equal(error.googleApi, 'example.test');
         assert.ok(safeGoogleError(error)[1].length > 0);
         return true;
       });

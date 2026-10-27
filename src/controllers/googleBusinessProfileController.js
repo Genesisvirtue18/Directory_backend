@@ -47,7 +47,11 @@ export const googleBusinessProfile = config => ({
     try {
       const access = await getGoogleAccessToken(connection, config);
       const accounts = await listAllPages('https://mybusinessaccountmanagement.googleapis.com/v1/accounts', access, 'accounts');
-      const locations = (await Promise.all(accounts.filter(account => account.name).map(account => listAllPages(`https://mybusinessbusinessinformation.googleapis.com/v1/${account.name}/locations?readMask=name,title,storefrontAddress,metadata&pageSize=100`, access, 'locations').then(items => items.map(location => ({ ...location, accountName: account.name })))))).flat();
+      const locations = [];
+      for (const account of accounts.filter(account => account.name)) {
+        const accountLocations = await listAllPages(`https://mybusinessbusinessinformation.googleapis.com/v1/${account.name}/locations?readMask=name,title,storefrontAddress,metadata&pageSize=100`, access, 'locations');
+        locations.push(...accountLocations.map(location => ({ ...location, accountName: account.name })));
+      }
       return sendSuccess(res, 'Google locations retrieved', { locations: locations.map(location => ({ accountName: location.accountName, locationName: location.name, title: location.title, address: location.storefrontAddress?.addressLines?.join(', '), city: location.storefrontAddress?.locality, mapsUri: location.metadata?.mapsUri })) });
     } catch (error) { logGoogleFailure('locations', error); const [status, message] = safeGoogleError(error); return sendError(res, status, message); }
   }],

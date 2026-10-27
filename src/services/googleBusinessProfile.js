@@ -27,9 +27,9 @@ export async function googleFetch(url, accessToken, options = {}) {
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const googleReason = googleErrorReason(body.error);
-    const reason = typeof googleReason === 'string' ? googleReason.toLowerCase() : '';
-    const disabledApi = ['service_disabled', 'servicedisabled', 'accessnotconfigured', 'api_disabled'].includes(reason);
-    const insufficientScope = ['access_token_scope_insufficient', 'insufficient_scope'].includes(reason);
+    const reason = typeof googleReason === 'string' ? googleReason.toLowerCase().replace(/[^a-z]/g, '') : '';
+    const disabledApi = ['servicedisabled', 'accessnotconfigured', 'apidisabled'].includes(reason);
+    const insufficientScope = ['accesstokenscopeinsufficient', 'insufficientscope'].includes(reason);
     const rateLimited = response.status === 429 || ['ratelimitexceeded', 'userratelimitexceeded', 'quotaexceeded'].includes(reason);
     const message = disabledApi ? 'GOOGLE_API_DISABLED'
       : insufficientScope ? 'GOOGLE_SCOPE'
@@ -42,6 +42,7 @@ export async function googleFetch(url, accessToken, options = {}) {
     error.status = response.status;
     error.upstreamStatus = response.status;
     error.googleReason = googleReason;
+    error.googleApi = new URL(url).hostname;
     throw error;
   }
   return response.json();
@@ -80,6 +81,7 @@ export function logGoogleFailure(operation, error) {
     : typeof error?.message === 'string' && /^GOOGLE_[A-Z_]+$/.test(error.message) ? error.message : undefined;
   console.error('[Google Business Profile] Request failed', {
     operation,
+    api: typeof error?.googleApi === 'string' && /^[a-z0-9.-]+$/.test(error.googleApi) ? error.googleApi : undefined,
     status: Number.isInteger(error?.upstreamStatus) ? error.upstreamStatus : Number.isInteger(error?.status) ? error.status : undefined,
     reason,
     code,
