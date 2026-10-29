@@ -43,6 +43,9 @@ Edit `.env`: set `MONGODB_URI` to a running local MongoDB or your own MongoDB UR
 | JWT_REFRESH_SECRET | Required different random secret, at least 32 characters |
 | CLIENT_URL | Required single HTTP(S) origin, no path or trailing slash |
 | TRUST_PROXY | Optional comma-separated trusted proxy IPs/CIDRs; default disabled |
+| GOOGLE_PLACES_API_KEY | Optional server-only Places API (New) key; see [Google Places setup](./docs/google-places.md) |
+| GOOGLE_PLACES_REVIEW_MODE | `rating` (default) or explicitly enabled `reviews` mode |
+| GOOGLE_PLACES_RATE_LIMIT_MAX | Google reviews endpoint requests per client IP per 15 minutes; default 20 |
 
 ```powershell
 npm run dev
@@ -68,6 +71,12 @@ Disconnected MongoDB returns HTTP 503 with `{"success":false,"message":"Database
 
 Bodies are limited to 100 KB and URL-encoded requests to 100 parameters. API traffic is limited to 100 requests per IP per 15 minutes, including health. CORS permits the configured client origin. Rate limits use a per-process memory store; a multi-instance deployment will need a shared store. Configure only the actual proxy IPs/CIDRs when deploying behind a proxy.
 
+## Admin business CSV import
+
+Administrators can upload the downloadable [business CSV template](../Client/public/business-upload-template.csv) from the Businesses tab. The `name`, `ownerEmail`, `category`, `description`, `services`, `phone`, `email`, `addressLine1`, `city`, and `state` columns are required. Owner email must match an active business-owner account; category and optional subcategory names must match active categories. A CSV can contain at most 500 business rows and is limited to 2 MB. Successfully validated rows are created as drafts; each failed row is returned with its CSV row number and validation reason, while valid rows are still imported.
+
+Use `|` between multiple services, amenities, images, and highlights. Working-hours columns (`mondayHours` through `sundayHours`) accept `HH:MM-HH:MM`, `closed`, or blank. `faqs` and `offers` accept JSON arrays matching the business fields. Optional URLs, phone numbers, category relationships, and business fields are validated before each draft is saved. Replace or delete the example row before uploading the template.
+
 ## Models and assumptions
 
 - Users require a name and at least one normalized email or phone. Contact values have partial unique indexes, so missing values can coexist. Phone format is 7–15 digits with an optional leading `+`; clients should use one canonical international format. Optional passwordHash accepts encoded bcrypt/Argon2 hashes and is excluded from default queries and serialization. Future authentication must generate secure hashes and enforce credential requirements. Never explicitly select or aggregate hashes into public responses.
@@ -77,6 +86,8 @@ Bodies are limited to 100 KB and URL-encoded requests to 100 parameters. API tra
 - Indexes cover contacts, slugs, category, city/locality, locality, listing status and geospatial location. Production disables automatic index creation: provision indexes explicitly in a controlled database maintenance step before accepting writes (for example via each model's `createIndexes()`). Mongoose uniqueness is enforced by MongoDB indexes, not a validation rule: [Mongoose validation documentation](https://mongoosejs.com/docs/validation).
 
 ## Tests
+
+Google Places configuration, field masks, matching, caching, response handling, and owner Place ID changes are covered with mocked provider responses. Routine tests do not send billable Google requests. See [Google Places setup and pricing](./docs/google-places.md) before configuring production.
 
 ```powershell
 npm test

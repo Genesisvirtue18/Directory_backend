@@ -80,6 +80,8 @@ const businessSchema = new Schema({
   whatsapp: phoneField,
   email: emailField,
   website: urlField,
+  googlePlaceId: { type: String, trim: true, maxlength: 300, match: /^[A-Za-z0-9_-]{1,300}$/ },
+  googlePlaceVerificationStatus: { type: String, enum: ['unverified', 'verified', 'mismatch'], default: 'unverified' },
   address: addressSchema,
   location: { type: locationSchema, default: undefined },
   workingHours: { type: [hoursSchema], validate: {
@@ -105,7 +107,7 @@ const businessSchema = new Schema({
   rejectionReason: { type: String, maxlength: 2000 },
   timeZone: { type: String, default: 'Asia/Kolkata' },
   verificationStatus: { type: String, enum: ['pending', 'verified', 'rejected'], default: 'pending' },
-  listingStatus: { type: String, enum: ['draft', 'pending_review', 'published', 'suspended', 'deleted'], default: 'draft' },
+  listingStatus: { type: String, enum: ['draft', 'pending_review', 'published', 'suspended', 'rejected', 'deleted'], default: 'draft' },
   averageRating: { type: Number, default: 0, min: 0, max: 5 },
   reviewCount: counter,
   viewCount: counter,

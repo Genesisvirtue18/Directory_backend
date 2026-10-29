@@ -11,7 +11,7 @@ import { apiRouter } from './routes/index.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { sendError } from './utils/response.js';
 
-export function createApp(config, { databaseState = () => mongoose.connection.readyState, logging = true, rateLimitMax = 100 } = {}) {
+export function createApp(config, { databaseState = () => mongoose.connection.readyState, logging = true, rateLimitMax = 100, placesService } = {}) {
   const app = express();
   app.set('env', config.NODE_ENV);
   app.disable('x-powered-by');
@@ -35,7 +35,7 @@ export function createApp(config, { databaseState = () => mongoose.connection.re
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: false, limit: '100kb', parameterLimit: 100 }));
   app.use('/uploads', express.static(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads'), { maxAge: '7d', fallthrough: false }));
-  app.use('/api/v1', apiRouter(config, databaseState));
+  app.use('/api/v1', apiRouter(config, databaseState, { placesService }));
   app.use(notFound);
   app.use(errorHandler);
   return app;

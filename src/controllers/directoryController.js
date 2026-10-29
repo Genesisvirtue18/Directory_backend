@@ -74,7 +74,7 @@ export const businessList = () => async (req,res,next) => { try {
   if (q.lat !== undefined) {
     const pipeline = [
       { $geoNear: { near: { type: 'Point', coordinates: [q.lng, q.lat] }, key: 'location', distanceField: 'distanceMeters', maxDistance: q.radiusMeters, spherical: true, query: filter } },
-      { $project: { owner: 0, rejectionReason: 0, reviews: 0 } },
+      { $project: { owner: 0, rejectionReason: 0, googlePlaceId: 0, googlePlaceVerificationStatus: 0, reviews: 0 } },
     ];
     if (q.openNow !== undefined) {
       let nearby = (await Business.aggregate(pipeline)).map(item => ({ ...item, isOpenNow: businessIsOpenNow(item) })).filter(item => item.isOpenNow === (q.openNow === 'true'));
@@ -96,8 +96,8 @@ export const businessList = () => async (req,res,next) => { try {
   }
   const sort = q.sort === 'rating' ? { averageRating: -1, reviewCount: -1, _id: 1 } : q.sort === 'newest' ? { createdAt: -1, _id: 1 } : q.q ? { score: { $meta: 'textScore' }, _id: 1 } : { isFeatured: -1, averageRating: -1, _id: 1 };
   const insensitive = q.q ? undefined : { locale: 'en', strength: 2 };
-  const data=await pageResult(Business,filter,req,'Businesses retrieved successfully','-owner -rejectionReason',sort,{ path: 'category', select: 'name slug' },insensitive);
+  const data=await pageResult(Business,filter,req,'Businesses retrieved successfully','-owner -rejectionReason -googlePlaceId -googlePlaceVerificationStatus',sort,{ path: 'category', select: 'name slug' },insensitive);
   data.items = data.items.map(standardizeReviewStats);
   sendSuccess(res,'Businesses retrieved successfully',data);
 }catch(e){next(e);} };
-export const businessBySlug = () => async (req,res,next) => { try { const item=await Business.findOne({slug:req.params.slug,listingStatus:'published',deletedAt:null}).select('-owner -rejectionReason').populate('category','name slug').populate('subcategories','name slug').lean(); if(!item) throw new AppError('Business not found',404); sendSuccess(res,'Business retrieved successfully',{item:standardizeReviewStats(item)}); }catch(e){next(e);} };
+export const businessBySlug = () => async (req,res,next) => { try { const item=await Business.findOne({slug:req.params.slug,listingStatus:'published',deletedAt:null}).select('-owner -rejectionReason -googlePlaceId -googlePlaceVerificationStatus').populate('category','name slug').populate('subcategories','name slug').lean(); if(!item) throw new AppError('Business not found',404); sendSuccess(res,'Business retrieved successfully',{item:standardizeReviewStats(item)}); }catch(e){next(e);} };

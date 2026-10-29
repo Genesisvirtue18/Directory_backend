@@ -42,10 +42,20 @@ test('Business required references, draft defaults and valid GeoJSON', async () 
   assert.equal(business.location.type, 'Point');
   assert.equal(business.listingStatus, 'draft');
   assert.equal(business.verificationStatus, 'pending');
+  assert.equal(business.googlePlaceVerificationStatus, 'unverified');
   assert.equal(business.averageRating, 0);
   await new Business(validBusiness()).validate();
   for (const coordinates of [[181, 0], [0, 91], [0], [0, 0, 0], []]) {
     await assert.rejects(new Business({ ...validBusiness(), location: { coordinates } }).validate());
+  }
+});
+test('Business optionally stores a normalized Place ID with a separate verification state', async () => {
+  const business = new Business({ ...validBusiness(), googlePlaceId: ' ChIJabc ', googlePlaceVerificationStatus: 'verified' });
+  await business.validate();
+  assert.equal(business.googlePlaceId, 'ChIJabc');
+  assert.equal(business.googlePlaceVerificationStatus, 'verified');
+  for (const fields of [{ googlePlaceId: 'https://maps.google.com/example' }, { googlePlaceVerificationStatus: 'confirmed' }]) {
+    await assert.rejects(new Business({ ...validBusiness(), ...fields }).validate());
   }
 });
 test('Business rejects invalid statuses, counters, ratings and opening hours', async () => {

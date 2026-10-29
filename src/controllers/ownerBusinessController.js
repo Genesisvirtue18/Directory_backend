@@ -2,7 +2,8 @@ import { Business } from '../models/Business.js';
 import { Category } from '../models/Category.js';
 import { AppError } from '../utils/AppError.js';
 import { sendSuccess } from '../utils/response.js';
-const forbidden = new Set(['owner','slug','verificationStatus','listingStatus','isFeatured','featuredUntil','averageRating','reviewCount','viewCount','photoCount','subscription','leadCount','contactClickCount','rejectionReason','deletedAt']);
+import { safeGooglePlacesError } from '../services/googlePlaces.js';
+const forbidden = new Set(['owner','slug','verificationStatus','googlePlaceVerificationStatus','listingStatus','isFeatured','featuredUntil','averageRating','reviewCount','viewCount','photoCount','subscription','leadCount','contactClickCount','rejectionReason','deletedAt']);
 const clean = body => Object.fromEntries(Object.entries(body).filter(([key]) => !forbidden.has(key)));
 const getOwned = async (id, owner) => { const item=await Business.findOne({_id:id,owner,deletedAt:null}); if(!item) throw new AppError('Business not found',404); return item; };
 const slugify = value => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 160) || 'business';
@@ -14,10 +15,22 @@ const validateCategorySelection = async body => {
     if (validCount !== new Set(body.subcategories.map(String)).size) throw new AppError('Select subcategories belonging to the chosen category', 422);
   }
 };
-export const createBusiness = () => async(req,res,next)=>{try{const body=clean(req.validated.body); if(!body.description||!body.phone||!body.address?.addressLine1) throw new AppError('Description, phone, and address line 1 are required before submission',422); await validateCategorySelection(body); const item=await Business.create({...body,slug:await uniqueSlug(body.name),owner:req.user.id,listingStatus:'pending_review',verificationStatus:'pending'}); await item.populate('category','name'); sendSuccess(res,'Business created successfully',{item},201);}catch(e){next(e);}};
+const verifyGooglePlace = async (placesService, placeId, business) => {
+  if (!placeId) return { googlePlaceId: undefined, googlePlaceVerificationStatus: 'unverified' };
+  try {
+    return { googlePlaceId: placeId, googlePlaceVerificationStatus: await placesService.verifyPlaceId(placeId, business) };
+  } catch (error) {
+    if (error?.name === 'GooglePlacesError') {
+      const [status, message] = safeGooglePlacesError(error);
+      throw new AppError(message, status);
+    }
+    throw error;
+  }
+};
+export const createBusiness = placesService => async(req,res,next)=>{try{const body=clean(req.validated.body); if(!body.description||!body.phone||!body.address?.addressLine1) throw new AppError('Description, phone, and address line 1 are required before submission',422); await validateCategorySelection(body); const googlePlace = await verifyGooglePlace(placesService, body.googlePlaceId, body); const item=await Business.create({...body,...googlePlace,slug:await uniqueSlug(body.name),owner:req.user.id,listingStatus:'pending_review',verificationStatus:'pending'}); await item.populate('category','name'); sendSuccess(res,'Business created successfully',{item},201);}catch(e){next(e);}};
 export const ownerBusinesses = () => async(req,res,next)=>{try{const {page,limit}=req.validated.query;const filter={owner:req.user.id,deletedAt:null}; const [items,totalItems]=await Promise.all([Business.find(filter).populate('category','name').skip((page-1)*limit).limit(limit),Business.countDocuments(filter)]);sendSuccess(res,'Businesses retrieved successfully',{items,pagination:{page,limit,totalItems,totalPages:Math.ceil(totalItems/limit),hasNextPage:page*limit<totalItems,hasPreviousPage:page>1}});}catch(e){next(e);}};
 export const ownerBusiness = () => async(req,res,next)=>{try{sendSuccess(res,'Business retrieved successfully',{item:await getOwned(req.params.id,req.user.id)});}catch(e){next(e);}};
-export const updateBusiness = () => async (req, res, next) => {
+export const updateBusiness = placesService => async (req, res, next) => {
   let stage = 'load business';
   try {
     const item = await getOwned(req.params.id, req.user.id);
@@ -25,6 +38,9 @@ export const updateBusiness = () => async (req, res, next) => {
 
     stage = 'validate update';
     const body = clean(req.validated.body);
+    if (Object.hasOwn(body, 'googlePlaceId') && body.googlePlaceId !== item.googlePlaceId) {
+      Object.assign(body, await verifyGooglePlace(placesService, body.googlePlaceId, { ...item.toObject(), ...body }));
+    }
     if (body.category || body.subcategories) {
       await validateCategorySelection({ category: body.category || item.category, subcategories: body.subcategories ?? item.subcategories });
     }

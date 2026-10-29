@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import multer from 'multer';
 import { fileTypeFromBuffer } from 'file-type';
 import { cloudinary, configureCloudinary } from '../config/cloudinary.js';
@@ -11,8 +12,9 @@ import * as users from '../controllers/userController.js';
 import * as directory from '../controllers/directoryController.js';
 import * as owner from '../controllers/ownerBusinessController.js';
 import * as admin from '../controllers/adminController.js';
-import { googleBusinessProfile } from '../controllers/googleBusinessProfileController.js';
+import { createGoogleReviewsController } from '../controllers/googlePlacesController.js';
 import { geocodeAddress } from '../services/geocodingService.js';
+import { createGooglePlacesService } from '../services/googlePlaces.js';
 import { authLogin, authRegister, idParam, objectId, pagination, refreshSchema } from '../validators/common.js';
 import { sendError, sendSuccess } from '../utils/response.js';
 
@@ -37,8 +39,9 @@ const googleMapsUrl = emptyableUrl.refine(value => {
     return host === 'maps.app.goo.gl' || host === 'goo.gl' || host === 'google.com' || host.endsWith('.google.com') || host === 'google.co.in' || host.endsWith('.google.co.in');
   } catch { return false; }
 }, 'Use a Google Maps link');
-const ownerBusinessBody = businessBody.omit({ reviews: true, slug: true, photoCount: true, website: true, email: true, logo: true, mapEmbedUrl: true, socialLinks: true }).extend({
+export const ownerBusinessBody = businessBody.omit({ reviews: true, slug: true, photoCount: true, website: true, email: true, logo: true, mapEmbedUrl: true, socialLinks: true }).extend({
   website: emptyableUrl.optional(), email: z.union([z.string().email(), z.literal('')]).optional(), logo: emptyableUrl.optional(), mapEmbedUrl: googleMapsUrl.optional(),
+  googlePlaceId: z.string().trim().max(600).transform(value => value.replace(/\s+/g, '')).pipe(z.string().max(300).regex(/^(?:[A-Za-z0-9_-]{1,300})?$/, 'Enter a valid Google Place ID')).optional(),
   phone: z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit Indian phone number'),
   alternatePhone: z.union([z.string().regex(/^[6-9]\d{9}$/), z.literal('')]).optional(),
   whatsapp: z.union([z.string().regex(/^[6-9]\d{9}$/), z.literal('')]).optional(),
@@ -48,10 +51,16 @@ const ownerBusinessBody = businessBody.omit({ reviews: true, slug: true, photoCo
   location: z.object({ type: z.literal('Point').default('Point'), coordinates: z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]) }).nullable().optional(),
 });
 
-export function apiRouter(config, databaseState) {
+export function apiRouter(config, databaseState, { placesService: injectedPlacesService } = {}) {
   const router = Router();
-  const google = googleBusinessProfile(config);
-  router.get('/google-business-profile/callback', google.callback);
+  const places = injectedPlacesService || createGooglePlacesService(config);
+  const googleReviewsLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: config.GOOGLE_PLACES_RATE_LIMIT_MAX || 20,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (_req, res) => sendError(res, 429, 'Google review request limit reached. Please try again later.'),
+  });
   router.get('/health', healthController(config, databaseState));
   router.post('/auth/register', authLimiter, validate(authRegister), auth.register(config));
   router.post('/auth/login', authLimiter, validate(authLogin), auth.login(config));
@@ -128,15 +137,10 @@ export function apiRouter(config, databaseState) {
     });
   });
   router.get('/owner/businesses', ...ownerOnly, validate(z.object({query:pagination})), owner.ownerBusinesses());
-  router.post('/owner/businesses', ...ownerOnly, validate(z.object({body:ownerBusinessBody.extend({ email: z.string().email('Enter a valid email address') })})), owner.createBusiness());
+  router.post('/owner/businesses', ...ownerOnly, validate(z.object({body:ownerBusinessBody.extend({ email: z.string().email('Enter a valid email address') })})), owner.createBusiness(places));
   router.get('/owner/businesses/:id', ...ownerOnly, validate(idParam), owner.ownerBusiness());
-  router.patch('/owner/businesses/:id', ...ownerOnly, validate(idParam.extend({body:ownerBusinessBody.partial()})), owner.updateBusiness());
+  router.patch('/owner/businesses/:id', ...ownerOnly, validate(idParam.extend({body:ownerBusinessBody.partial()})), owner.updateBusiness(places));
   router.delete('/owner/businesses/:id', ...ownerOnly, validate(idParam), owner.removeBusiness());
-  router.get('/owner/businesses/:id/google/status', ...ownerOnly, validate(idParam), ...google.status);
-  router.post('/owner/businesses/:id/google/connect', ...ownerOnly, validate(idParam), ...google.connect);
-  router.get('/owner/businesses/:id/google/locations', ...ownerOnly, validate(idParam), ...google.locations);
-  router.put('/owner/businesses/:id/google/location', ...ownerOnly, validate(idParam.extend({ body: z.object({ accountName: z.string().min(1).max(200), locationName: z.string().min(1).max(400) }).strict() })), ...google.selectLocation);
-  router.delete('/owner/businesses/:id/google/disconnect', ...ownerOnly, validate(idParam), ...google.disconnect);
   router.post('/owner/businesses/:id/submit', ...ownerOnly, validate(idParam), owner.submitBusiness());
   const adminOnly = [authenticate(config), authorizeRoles('admin', 'super_admin')];
   const categoryBody = z.object({ name: z.string().trim().min(2).max(120), parentCategory: objectId.optional() }).strict();
@@ -149,11 +153,13 @@ export function apiRouter(config, databaseState) {
   router.post('/admin/categories/:id/services/import', ...adminOnly, validate(idParam), csvUpload.single('file'), admin.importServices());
   router.get('/admin/owners', ...adminOnly, admin.owners());
   router.get('/admin/businesses', ...adminOnly, validate(z.object({ query: pagination.extend({ status: z.enum(['draft', 'pending_review', 'published', 'suspended', 'rejected']).optional() }) })), admin.businesses());
+  router.post('/admin/businesses/import', ...adminOnly, csvUpload.single('file'), admin.importBusinesses());
   router.patch('/admin/businesses/:id/review', ...adminOnly, validate(idParam.extend({ body: z.object({ decision: z.enum(['approve', 'reject']), rejectionReason: z.string().trim().max(2000).optional() }).strict() })), admin.reviewBusiness());
+  router.patch('/admin/businesses/:id/google-place', ...adminOnly, validate(idParam), admin.clearGooglePlaceMismatch());
 const publicQuery=pageQuery.extend({q:z.string().trim().max(100).optional(),category:z.string().trim().max(180).optional(),city:z.string().trim().max(120).optional(),locality:z.string().trim().max(120).optional(),state:z.string().trim().max(120).optional(),verified:z.enum(['true','false']).optional(),minimumRating:z.coerce.number().min(0).max(5).optional(),lat:z.coerce.number().min(-90).max(90).optional(),lng:z.coerce.number().min(-180).max(180).optional(),radiusMeters:z.coerce.number().int().min(100).max(50000).default(10000),openNow:z.enum(['true','false']).optional(),sort:z.enum(['relevance','rating','newest','distance']).default('relevance')}).refine(q=>(q.lat===undefined)===(q.lng===undefined),{message:'Latitude and longitude must be provided together',path:['lat']}).refine(q=>q.openNow===undefined||q.lat!==undefined,{message:'Open/closed filtering requires coordinates',path:['openNow']});
   router.get('/businesses', validate(z.object({query:publicQuery})), directory.businessList());
   router.get('/search', validate(z.object({query:publicQuery})), directory.businessList());
   router.get('/businesses/:slug', directory.businessBySlug());
-  router.get('/businesses/:slug/google-reviews', ...google.reviews);
+  router.get('/businesses/:id/google-reviews', googleReviewsLimit, createGoogleReviewsController(places));
   return router;
 }
