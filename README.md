@@ -73,9 +73,9 @@ Bodies are limited to 100 KB and URL-encoded requests to 100 parameters. API tra
 
 ## Admin business CSV import
 
-Administrators can upload the downloadable [business CSV template](../Client/public/business-upload-template.csv) from the Businesses tab. The `name`, `ownerEmail`, `category`, `description`, `services`, `phone`, `email`, `addressLine1`, `city`, and `state` columns are required. Owner email must match an active business-owner account; category and optional subcategory names must match active categories. A CSV can contain at most 500 business rows and is limited to 2 MB. Successfully validated rows are created as drafts; each failed row is returned with its CSV row number and validation reason, while valid rows are still imported.
+Administrators can upload the downloadable [business CSV template](../Client/public/business-upload-template.csv) from the Businesses tab. The `name`, `ownerEmail`, `category`, `description`, `services`, `phone`, `email`, `addressLine1`, `city`, and `state` columns are required. Owner email must match an active business-owner account; category and optional subcategory names must match active categories. A CSV can contain at most 500 business rows and is limited to 2 MB. Successfully validated rows are submitted as pending review; each failed row is returned with its CSV row number and validation reason, while valid rows are still imported.
 
-Use `|` between multiple services, amenities, images, and highlights. Working-hours columns (`mondayHours` through `sundayHours`) accept `HH:MM-HH:MM`, `closed`, or blank. `faqs` and `offers` accept JSON arrays matching the business fields. Optional URLs, phone numbers, category relationships, and business fields are validated before each draft is saved. Replace or delete the example row before uploading the template.
+Use `|` between multiple services, amenities, images, and highlights. Working-hours columns (`mondayHours` through `sundayHours`) accept `HH:MM-HH:MM`, `closed`, or blank. `faqs` and `offers` accept JSON arrays matching the business fields. Optional URLs, phone numbers, category relationships, and business fields are validated before each listing is submitted for review. Replace or delete the example row before uploading the template.
 
 ## Profile activity and customer inquiries
 

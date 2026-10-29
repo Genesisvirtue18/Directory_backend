@@ -213,7 +213,7 @@ export const importBusinesses = () => async (req, res, next) => { try {
     const rowNumber = index + 2;
     try {
       const { business, owner } = await businessFromCsvRow(values, normalizedHeaders);
-      const item = await Business.create({ ...business, slug: await businessSlug(business.name), owner: owner._id, listingStatus: 'draft', verificationStatus: 'pending' });
+      const item = await Business.create({ ...business, slug: await businessSlug(business.name), owner: owner._id, listingStatus: 'pending_review', verificationStatus: 'pending' });
       await item.populate([{ path: 'category', select: 'name slug' }, { path: 'owner', select: 'name email' }]);
       created.push(item);
     } catch (error) {
