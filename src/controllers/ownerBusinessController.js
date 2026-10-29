@@ -1,5 +1,6 @@
 import { Business } from '../models/Business.js';
 import { Category } from '../models/Category.js';
+import { Lead } from '../models/Lead.js';
 import { AppError } from '../utils/AppError.js';
 import { sendSuccess } from '../utils/response.js';
 import { safeGooglePlacesError } from '../services/googlePlaces.js';
@@ -28,7 +29,41 @@ const verifyGooglePlace = async (placesService, placeId, business) => {
   }
 };
 export const createBusiness = placesService => async(req,res,next)=>{try{const body=clean(req.validated.body); if(!body.description||!body.phone||!body.address?.addressLine1) throw new AppError('Description, phone, and address line 1 are required before submission',422); await validateCategorySelection(body); const googlePlace = await verifyGooglePlace(placesService, body.googlePlaceId, body); const item=await Business.create({...body,...googlePlace,slug:await uniqueSlug(body.name),owner:req.user.id,listingStatus:'pending_review',verificationStatus:'pending'}); await item.populate('category','name'); sendSuccess(res,'Business created successfully',{item},201);}catch(e){next(e);}};
-export const ownerBusinesses = () => async(req,res,next)=>{try{const {page,limit}=req.validated.query;const filter={owner:req.user.id,deletedAt:null}; const [items,totalItems]=await Promise.all([Business.find(filter).populate('category','name').skip((page-1)*limit).limit(limit),Business.countDocuments(filter)]);sendSuccess(res,'Businesses retrieved successfully',{items,pagination:{page,limit,totalItems,totalPages:Math.ceil(totalItems/limit),hasNextPage:page*limit<totalItems,hasPreviousPage:page>1}});}catch(e){next(e);}};
+export const ownerBusinesses = () => async(req,res,next)=>{try{const {page,limit}=req.validated.query;const filter={owner:req.user.id,deletedAt:null}; const [items,totalItems]=await Promise.all([Business.find(filter).populate('category','name').skip((page-1)*limit).limit(limit),Business.countDocuments(filter)]);const ids=items.map(item=>item._id);const counts=ids.length?await Lead.aggregate([{ $match:{business:{ $in:ids }} },{ $group:{_id:'$business',count:{ $sum:1 }} }]):[];const countByBusiness=new Map(counts.map(item=>[String(item._id),item.count]));for(const item of items)item.leadCount=countByBusiness.get(String(item._id))||0;sendSuccess(res,'Businesses retrieved successfully',{items,pagination:{page,limit,totalItems,totalPages:Math.ceil(totalItems/limit),hasNextPage:page*limit<totalItems,hasPreviousPage:page>1}});}catch(e){next(e);}};
+export const ownerLeads = () => async (req, res, next) => {
+  try {
+    const businesses = await Business.find({ owner: req.user.id, deletedAt: null }).select('_id').lean();
+    const businessIds = businesses.map(item => item._id);
+    const items = businessIds.length
+      ? await Lead.find({ business: { $in: businessIds } }).populate('business', 'name').sort('-createdAt').limit(100).lean()
+      : [];
+    sendSuccess(res, 'Business inquiries retrieved successfully', { items });
+  } catch (error) { next(error); }
+};
+export const updateOwnerLead = () => async (req, res, next) => {
+  try {
+    const businessIds = await Business.find({ owner: req.user.id, deletedAt: null }).distinct('_id');
+    const item = await Lead.findOneAndUpdate(
+      { _id: req.params.id, business: { $in: businessIds } },
+      { $set: { status: req.validated.body.status } },
+      { new: true },
+    ).populate('business', 'name').lean();
+    if (!item) throw new AppError('Inquiry not found', 404);
+    sendSuccess(res, 'Inquiry status updated', { item });
+  } catch (error) { next(error); }
+};
+export const addOwnerLeadNote = () => async (req, res, next) => {
+  try {
+    const businessIds = await Business.find({ owner: req.user.id, deletedAt: null }).distinct('_id');
+    const item = await Lead.findOne({ _id: req.params.id, business: { $in: businessIds } });
+    if (!item) throw new AppError('Inquiry not found', 404);
+    if (item.notes.length >= 50) throw new AppError('An inquiry can have at most 50 follow-up notes', 422);
+    item.notes.push(req.validated.body.note);
+    await item.save();
+    await item.populate('business', 'name');
+    sendSuccess(res, 'Follow-up note added', { item });
+  } catch (error) { next(error); }
+};
 export const ownerBusiness = () => async(req,res,next)=>{try{sendSuccess(res,'Business retrieved successfully',{item:await getOwned(req.params.id,req.user.id)});}catch(e){next(e);}};
 export const updateBusiness = placesService => async (req, res, next) => {
   let stage = 'load business';

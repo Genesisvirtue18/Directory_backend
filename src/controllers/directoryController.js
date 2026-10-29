@@ -1,6 +1,7 @@
 import { Category } from '../models/Category.js';
 import { Location } from '../models/Location.js';
 import { Business } from '../models/Business.js';
+import { Lead } from '../models/Lead.js';
 import { AppError } from '../utils/AppError.js';
 import { sendSuccess } from '../utils/response.js';
 const pageResult = async (Model, filter, req, message, select, sort = { name: 1, _id: 1 }, populate, collation) => { const { page, limit } = req.validated.query; let find = Model.find(filter).select(select || '').sort(sort).skip((page - 1) * limit).limit(limit); let count = Model.countDocuments(filter); if (populate) find = find.populate(populate); if (collation) { find = find.collation(collation); count = count.collation(collation); } const [items, totalItems] = await Promise.all([find.lean(), count]); return { items, pagination: { page, limit, totalItems, totalPages: Math.ceil(totalItems / limit), hasNextPage: page * limit < totalItems, hasPreviousPage: page > 1 } }; };
@@ -100,4 +101,26 @@ export const businessList = () => async (req,res,next) => { try {
   data.items = data.items.map(standardizeReviewStats);
   sendSuccess(res,'Businesses retrieved successfully',data);
 }catch(e){next(e);} };
-export const businessBySlug = () => async (req,res,next) => { try { const item=await Business.findOne({slug:req.params.slug,listingStatus:'published',deletedAt:null}).select('-owner -rejectionReason -googlePlaceId -googlePlaceVerificationStatus').populate('category','name slug').populate('subcategories','name slug').lean(); if(!item) throw new AppError('Business not found',404); sendSuccess(res,'Business retrieved successfully',{item:standardizeReviewStats(item)}); }catch(e){next(e);} };
+export const businessBySlug = () => async (req,res,next) => { try { const item=await Business.findOne({slug:req.params.slug,listingStatus:'published',deletedAt:null}).select('-owner -rejectionReason -googlePlaceId -googlePlaceVerificationStatus').populate('category','name slug').populate('subcategories','name slug').lean(); if(!item) throw new AppError('Business not found',404); item.leadCount=await Lead.countDocuments({business:item._id}); sendSuccess(res,'Business retrieved successfully',{item:standardizeReviewStats(item)}); }catch(e){next(e);} };
+export const recordBusinessView = () => async (req, res, next) => {
+  try {
+    const item = await Business.findOneAndUpdate(
+      { _id: req.params.id, listingStatus: 'published', deletedAt: null },
+      { $inc: { viewCount: 1 } },
+      { new: true, projection: { viewCount: 1 } },
+    ).lean();
+    if (!item) throw new AppError('Business not found', 404);
+    sendSuccess(res, 'Business view recorded', { viewCount: item.viewCount });
+  } catch (error) { next(error); }
+};
+export const createBusinessLead = () => async (req, res, next) => {
+  try {
+    const business = await Business.findOne({ _id: req.params.id, listingStatus: 'published', deletedAt: null }).select('_id services').lean();
+    if (!business) throw new AppError('Business not found', 404);
+    const { name, phone, email, service, message } = req.validated.body;
+    if (service && !business.services.includes(service)) throw new AppError('Select a service offered by this business', 422);
+    const lead = await Lead.create({ business: business._id, name, phone, ...(email ? { email } : {}), ...(service ? { service } : {}), message });
+    const leadCount = await Lead.countDocuments({ business: business._id });
+    sendSuccess(res, 'Your inquiry was sent to the business', { item: { id: String(lead._id), leadCount } }, 201);
+  } catch (error) { next(error); }
+};

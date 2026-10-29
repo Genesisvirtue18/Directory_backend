@@ -77,6 +77,10 @@ Administrators can upload the downloadable [business CSV template](../Client/pub
 
 Use `|` between multiple services, amenities, images, and highlights. Working-hours columns (`mondayHours` through `sundayHours`) accept `HH:MM-HH:MM`, `closed`, or blank. `faqs` and `offers` accept JSON arrays matching the business fields. Optional URLs, phone numbers, category relationships, and business fields are validated before each draft is saved. Replace or delete the example row before uploading the template.
 
+## Profile activity and customer inquiries
+
+Published business profiles record a view when a visitor opens the profile. The public contact form validates and stores customer inquiries, and increments are reflected in profile and owner dashboard metrics. Owners can review stored inquiries from their authenticated Leads tab. View tracking and inquiry submission have separate per-IP rate limits; inquiry contact details are available only to the owner of the contacted business.
+
 ## Models and assumptions
 
 - Users require a name and at least one normalized email or phone. Contact values have partial unique indexes, so missing values can coexist. Phone format is 7–15 digits with an optional leading `+`; clients should use one canonical international format. Optional passwordHash accepts encoded bcrypt/Argon2 hashes and is excluded from default queries and serialization. Future authentication must generate secure hashes and enforce credential requirements. Never explicitly select or aggregate hashes into public responses.

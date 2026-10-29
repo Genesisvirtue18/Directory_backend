@@ -61,6 +61,20 @@ export function apiRouter(config, databaseState, { placesService: injectedPlaces
     legacyHeaders: false,
     handler: (_req, res) => sendError(res, 429, 'Google review request limit reached. Please try again later.'),
   });
+  const businessViewLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 60,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (_req, res) => sendError(res, 429, 'Profile view tracking limit reached. Please try again later.'),
+  });
+  const businessLeadLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 5,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (_req, res) => sendError(res, 429, 'Inquiry limit reached. Please try again later.'),
+  });
   router.get('/health', healthController(config, databaseState));
   router.post('/auth/register', authLimiter, validate(authRegister), auth.register(config));
   router.post('/auth/login', authLimiter, validate(authLogin), auth.login(config));
@@ -138,6 +152,9 @@ export function apiRouter(config, databaseState, { placesService: injectedPlaces
   });
   router.get('/owner/businesses', ...ownerOnly, validate(z.object({query:pagination})), owner.ownerBusinesses());
   router.post('/owner/businesses', ...ownerOnly, validate(z.object({body:ownerBusinessBody.extend({ email: z.string().email('Enter a valid email address') })})), owner.createBusiness(places));
+  router.get('/owner/leads', ...ownerOnly, validate(z.object({ query: pagination })), owner.ownerLeads());
+  router.patch('/owner/leads/:id', ...ownerOnly, validate(idParam.extend({ body: z.object({ status: z.enum(['new', 'contacted', 'converted']) }).strict() })), owner.updateOwnerLead());
+  router.post('/owner/leads/:id/notes', ...ownerOnly, validate(idParam.extend({ body: z.object({ note: z.string().trim().min(1).max(1000) }).strict() })), owner.addOwnerLeadNote());
   router.get('/owner/businesses/:id', ...ownerOnly, validate(idParam), owner.ownerBusiness());
   router.patch('/owner/businesses/:id', ...ownerOnly, validate(idParam.extend({body:ownerBusinessBody.partial()})), owner.updateBusiness(places));
   router.delete('/owner/businesses/:id', ...ownerOnly, validate(idParam), owner.removeBusiness());
@@ -157,9 +174,21 @@ export function apiRouter(config, databaseState, { placesService: injectedPlaces
   router.patch('/admin/businesses/:id/review', ...adminOnly, validate(idParam.extend({ body: z.object({ decision: z.enum(['approve', 'reject']), rejectionReason: z.string().trim().max(2000).optional() }).strict() })), admin.reviewBusiness());
   router.patch('/admin/businesses/:id/google-place', ...adminOnly, validate(idParam), admin.clearGooglePlaceMismatch());
 const publicQuery=pageQuery.extend({q:z.string().trim().max(100).optional(),category:z.string().trim().max(180).optional(),city:z.string().trim().max(120).optional(),locality:z.string().trim().max(120).optional(),state:z.string().trim().max(120).optional(),verified:z.enum(['true','false']).optional(),minimumRating:z.coerce.number().min(0).max(5).optional(),lat:z.coerce.number().min(-90).max(90).optional(),lng:z.coerce.number().min(-180).max(180).optional(),radiusMeters:z.coerce.number().int().min(100).max(50000).default(10000),openNow:z.enum(['true','false']).optional(),sort:z.enum(['relevance','rating','newest','distance']).default('relevance')}).refine(q=>(q.lat===undefined)===(q.lng===undefined),{message:'Latitude and longitude must be provided together',path:['lat']}).refine(q=>q.openNow===undefined||q.lat!==undefined,{message:'Open/closed filtering requires coordinates',path:['openNow']});
-  router.get('/businesses', validate(z.object({query:publicQuery})), directory.businessList());
-  router.get('/search', validate(z.object({query:publicQuery})), directory.businessList());
-  router.get('/businesses/:slug', directory.businessBySlug());
-  router.get('/businesses/:id/google-reviews', googleReviewsLimit, createGoogleReviewsController(places));
+const businessLeadBody = z.object({
+  name: z.string().trim().min(2).max(120),
+  phone: z.string().trim().min(7).max(30).regex(/^[+()\d\s-]+$/).refine(value => {
+    const digits = value.replace(/\D/g, '').length;
+    return digits >= 7 && digits <= 15;
+  }, 'Enter a valid phone number'),
+  email: z.union([z.email().max(254), z.literal('')]).optional(),
+  service: z.string().trim().max(150).optional(),
+  message: z.string().trim().min(5).max(2000),
+}).strict();
+router.get('/businesses', validate(z.object({query:publicQuery})), directory.businessList());
+router.get('/search', validate(z.object({query:publicQuery})), directory.businessList());
+router.get('/businesses/:slug', directory.businessBySlug());
+router.post('/businesses/:id/views', businessViewLimit, validate(idParam), directory.recordBusinessView());
+router.post('/businesses/:id/leads', businessLeadLimit, validate(idParam.extend({ body: businessLeadBody })), directory.createBusinessLead());
+router.get('/businesses/:id/google-reviews', googleReviewsLimit, createGoogleReviewsController(places));
   return router;
 }
