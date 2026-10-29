@@ -42,7 +42,7 @@ Edit `.env`: set `MONGODB_URI` to a running local MongoDB or your own MongoDB UR
 | JWT_ACCESS_SECRET | Required random secret, at least 32 characters |
 | JWT_REFRESH_SECRET | Required different random secret, at least 32 characters |
 | CLIENT_URL | Required single HTTP(S) origin, no path or trailing slash |
-| TRUST_PROXY | Optional comma-separated trusted proxy IPs/CIDRs; default disabled |
+| TRUST_PROXY | Optional trusted proxy hop count (for example `1`) or comma-separated trusted proxy IPs/CIDRs; default disabled |
 | GOOGLE_PLACES_API_KEY | Optional server-only Places API (New) key; see [Google Places setup](./docs/google-places.md) |
 | GOOGLE_PLACES_REVIEW_MODE | `rating` (default) or explicitly enabled `reviews` mode |
 | GOOGLE_PLACES_RATE_LIMIT_MAX | Google reviews endpoint requests per client IP per 15 minutes; default 20 |
@@ -69,7 +69,7 @@ Healthy responses use HTTP 200:
 
 Disconnected MongoDB returns HTTP 503 with `{"success":false,"message":"Database unavailable","errors":[]}`. Health checks use Mongoose connection state, not a per-request database ping. Unknown paths return 404. JSON parsing, request size, rate limit, validation, duplicate key and cast errors share the error shape. Production errors omit internal details; development adds only the error type for server failures, never raw driver messages or stacks.
 
-Bodies are limited to 100 KB and URL-encoded requests to 100 parameters. API traffic is limited to 100 requests per IP per 15 minutes, including health. CORS permits the configured client origin. Rate limits use a per-process memory store; a multi-instance deployment will need a shared store. Configure only the actual proxy IPs/CIDRs when deploying behind a proxy.
+Bodies are limited to 100 KB and URL-encoded requests to 100 parameters. API traffic is limited to 100 requests per client IP per 15 minutes, including health. CORS permits the configured client origin. Rate limits use a per-process memory store; a multi-instance deployment will need a shared store. Configure only the actual proxy IPs/CIDRs or known proxy hop count when deploying behind a proxy. For Render's single proxy hop, set `TRUST_PROXY=1` in the server environment; do not set it to `true` or trust all proxies.
 
 ## Admin business CSV import
 

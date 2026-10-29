@@ -60,6 +60,13 @@ test('security headers, CORS, proxy default and rate limiting', async () => {
   const limited = await request(instance).get('/api/v1/health').expect(429);
   assert.equal(limited.body.success, false);
 });
+test('configured proxy hop count trusts forwarded client IPs for rate limiting', async () => {
+  const instance = createApp({ ...config, TRUST_PROXY: '1' }, { databaseState: () => 1, logging: false, rateLimitMax: 1 });
+  assert.equal(instance.get('trust proxy'), 1);
+  await request(instance).get('/api/v1/health').set('X-Forwarded-For', '203.0.113.10').expect(200);
+  await request(instance).get('/api/v1/health').set('X-Forwarded-For', '203.0.113.11').expect(200);
+  await request(instance).get('/api/v1/health').set('X-Forwarded-For', '203.0.113.10').expect(429);
+});
 test('validation parses body, params and query without mutating Express query', async () => {
   const instance = express();
   instance.use(express.json());
